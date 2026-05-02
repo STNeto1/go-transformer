@@ -8,6 +8,8 @@ import (
 	"github.com/ajitpratap0/GoSQLX/pkg/formatter"
 	"github.com/ajitpratap0/GoSQLX/pkg/sql/ast"
 	_ "github.com/duckdb/duckdb-go/v2"
+
+	"go-transformer/internal/sqlspec"
 )
 
 func main() {
@@ -17,58 +19,44 @@ func main() {
 	}
 	defer db.Close()
 
-	createTableStmt := ast.CreateTableStatement{
+	tableSpec := sqlspec.TableSpec{
 		Name: "people",
-		Columns: []ast.ColumnDef{
-			{
-				Name: "id",
-				Type: "integer",
-			},
-			{
-				Name: "name",
-				Type: "varchar",
-			},
+		Columns: []sqlspec.ColumnSpec{
+			{Name: "id", SQLType: "integer"},
+			{Name: "name", SQLType: "varchar"},
 		},
 	}
-	createTableSQL := formatter.FormatStatement(&createTableStmt, ast.CompactStyle())
+	createTableStmt, err := sqlspec.BuildCreateTable(tableSpec)
+	if err != nil {
+		log.Fatal(err)
+	}
+	createTableSQL := formatter.FormatStatement(createTableStmt, ast.CompactStyle())
 
-	insertStmt := ast.InsertStatement{
-		TableName: "people",
-		Columns: []ast.Expression{
-			&ast.Identifier{Name: "id"},
-			&ast.Identifier{Name: "name"},
-		},
-		Values: [][]ast.Expression{
-			{
-				&ast.LiteralValue{Value: 1, Type: "integer"},
-				&ast.LiteralValue{Value: "John", Type: "STRING"},
-			},
-			{
-				&ast.LiteralValue{Value: 2, Type: "integer"},
-				&ast.LiteralValue{Value: "Doe", Type: "STRING"},
-			},
-			{
-				&ast.LiteralValue{Value: 3, Type: "integer"},
-				&ast.LiteralValue{Value: "Mary", Type: "STRING"},
-			},
-			{
-				&ast.LiteralValue{Value: 4, Type: "integer"},
-				&ast.LiteralValue{Value: "Jane", Type: "STRING"},
-			},
+	insertSpec := sqlspec.InsertSpec{
+		Table:   "people",
+		Columns: []string{"id", "name"},
+		Rows: []map[string]any{
+			{"id": 1, "name": "John"},
+			{"id": 2, "name": "Doe"},
+			{"id": 3, "name": "Mary"},
+			{"id": 4, "name": "Jane"},
 		},
 	}
-	insertStmtSQL := formatter.FormatStatement(&insertStmt, ast.CompactStyle())
+	insertStmt, err := sqlspec.BuildInsert(insertSpec)
+	if err != nil {
+		log.Fatal(err)
+	}
+	insertStmtSQL := formatter.FormatStatement(insertStmt, ast.CompactStyle())
 
-	selectStmt := ast.SelectStatement{
-		Columns: []ast.Expression{
-			&ast.Identifier{Name: "id"},
-			&ast.Identifier{Name: "name"},
-		},
-		From: []ast.TableReference{
-			{Name: "people"},
-		},
+	selectSpec := sqlspec.SelectSpec{
+		Table:   "people",
+		Columns: []string{"id", "name"},
 	}
-	selectStmtSQL := formatter.FormatStatement(&selectStmt, ast.CompactStyle())
+	selectStmt, err := sqlspec.BuildSelect(selectSpec)
+	if err != nil {
+		log.Fatal(err)
+	}
+	selectStmtSQL := formatter.FormatStatement(selectStmt, ast.CompactStyle())
 
 	_, err = db.Exec(createTableSQL)
 	if err != nil {
