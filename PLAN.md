@@ -1,0 +1,22 @@
+# PLAN
+
+## Node Implementation Order
+
+1. [ ] `DataSource` (kinda at the end)
+2. [ ] `SelectColumns`
+3. [x] `Filter`
+4. [ ] `Sort`
+5. [ ] `LimitSample` (implement `limit` first)
+6. [ ] `ConstantColumn`
+7. [ ] `ComputeColumn`
+8. [ ] `RenameColumns`
+9. [ ] `CastColumns`
+10. [ ] `FillReplace`
+11. [ ] `Deduplicate`
+12. [ ] `Aggregate`
+13. [ ] `MergeUnion` (implement `UNION ALL` first)
+14. [ ] `Join` (implement `INNER JOIN` first)
+15. [ ] `Conditional`
+16. [ ] `Switch`
+17. [ ] `UnnestArray`
+18. [ ] `PivotUnpivot`
