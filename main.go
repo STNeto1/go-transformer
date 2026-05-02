@@ -58,11 +58,51 @@ func main() {
 	}
 	selectStmtSQL := formatter.FormatStatement(selectStmt, ast.CompactStyle())
 
+	branch, err := sqlspec.ResolveBranch(tableSpec, sqlspec.TableBranchSpec{
+		TargetTable: "people_branch",
+		Ops: []sqlspec.SchemaOp{
+			{
+				Type:        sqlspec.SchemaOpAddColumn,
+				Column:      sqlspec.ColumnSpec{Name: "foo", SQLType: "varchar"},
+				StaticValue: "bar",
+			},
+		},
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	createBranchStmt, err := sqlspec.BuildCreateTable(branch.Table)
+	if err != nil {
+		log.Fatal(err)
+	}
+	createBranchSQL := formatter.FormatStatement(createBranchStmt, ast.CompactStyle())
+
+	backfillStmt, err := sqlspec.BuildBackfillInsert(tableSpec.Name, branch)
+	if err != nil {
+		log.Fatal(err)
+	}
+	backfillSQL := formatter.FormatStatement(backfillStmt, ast.CompactStyle())
+
+	branchSelectStmt, err := sqlspec.BuildSelectAll(branch.Table)
+	if err != nil {
+		log.Fatal(err)
+	}
+	branchSelectSQL := formatter.FormatStatement(branchSelectStmt, ast.CompactStyle())
+
 	_, err = db.Exec(createTableSQL)
 	if err != nil {
 		log.Fatal(err)
 	}
 	_, err = db.Exec(insertStmtSQL)
+	if err != nil {
+		log.Fatal(err)
+	}
+	_, err = db.Exec(createBranchSQL)
+	if err != nil {
+		log.Fatal(err)
+	}
+	_, err = db.Exec(backfillSQL)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -105,5 +145,41 @@ func main() {
 	}
 	if !hasRows {
 		log.Println("no rows")
+	}
+
+	fmt.Println("-- branch table --")
+	branchRows, err := db.Query(branchSelectSQL)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer branchRows.Close()
+
+	branchCols, err := branchRows.Columns()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	for branchRows.Next() {
+		values := make([]any, len(branchCols))
+		valuePtrs := make([]any, len(branchCols))
+		for i := range values {
+			valuePtrs[i] = &values[i]
+		}
+
+		if err := branchRows.Scan(valuePtrs...); err != nil {
+			log.Fatal(err)
+		}
+
+		for i, col := range branchCols {
+			fmt.Printf("%s: %v", col, values[i])
+			if i < len(branchCols)-1 {
+				fmt.Print(", ")
+			}
+		}
+		fmt.Println()
+	}
+
+	if err := branchRows.Err(); err != nil {
+		log.Fatal(err)
 	}
 }
