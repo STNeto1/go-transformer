@@ -7,7 +7,7 @@
 3. [x] `Filter`
 4. [x] `Sort`
 5. [x] `LimitSample` (implemented `limit`)
-6. [ ] `ConstantColumn`
+6. [x] `ConstantColumn`
 7. [ ] `ComputeColumn`
 8. [ ] `RenameColumns`
 9. [ ] `CastColumns`
