@@ -79,7 +79,6 @@ func TestDeriveFilter_StringPatternOps_BuildLikeWhere(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -282,7 +281,6 @@ func TestDeriveFilter_DuckDBBackfill_NE_GT_LT(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			resolved, backfill, err := DeriveFilter(base, tc.table, tc.filter)
 			require.NoError(t, err)
@@ -349,7 +347,6 @@ func TestDeriveFilter_DuckDBBackfill_StringOps(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			resolved, backfill, err := DeriveFilter(base, tc.table, tc.filter)
 			require.NoError(t, err)

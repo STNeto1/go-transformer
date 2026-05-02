@@ -3,7 +3,7 @@
 ## Node Implementation Order
 
 1. [ ] `DataSource` (kinda at the end)
-2. [ ] `SelectColumns`
+2. [x] `SelectColumns`
 3. [x] `Filter`
 4. [ ] `Sort`
 5. [ ] `LimitSample` (implement `limit` first)
