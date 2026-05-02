@@ -9,7 +9,7 @@
 5. [x] `LimitSample` (implemented `limit`)
 6. [x] `ConstantColumn`
 7. [ ] `ComputeColumn`
-8. [ ] `RenameColumns`
+8. [x] `RenameColumns`
 9. [ ] `CastColumns`
 10. [ ] `FillReplace`
 11. [ ] `Deduplicate`
