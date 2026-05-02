@@ -12,7 +12,7 @@
 8. [x] `RenameColumns`
 9. [x] `CastColumns`
 10. [x] `FillReplace`
-11. [ ] `Deduplicate`
+11. [x] `Deduplicate`
 12. [ ] `Aggregate`
 13. [ ] `MergeUnion` (implement `UNION ALL` first)
 14. [ ] `Join` (implement `INNER JOIN` first)
