@@ -12,6 +12,8 @@ import (
 )
 
 func TestResolveBranchAddColumnStaticValue(t *testing.T) {
+	t.Parallel()
+
 	base := TableSpec{
 		Name: "people",
 		Columns: []ColumnSpec{
@@ -36,6 +38,8 @@ func TestResolveBranchAddColumnStaticValue(t *testing.T) {
 }
 
 func TestResolveBranchRejectsInvalidDrop(t *testing.T) {
+	t.Parallel()
+
 	base := TableSpec{
 		Name: "people",
 		Columns: []ColumnSpec{
@@ -54,6 +58,8 @@ func TestResolveBranchRejectsInvalidDrop(t *testing.T) {
 }
 
 func TestBranchPhysicalTableCreationAndBackfill(t *testing.T) {
+	t.Parallel()
+
 	db, err := sql.Open("duckdb", "")
 	require.NoError(t, err)
 	defer db.Close()

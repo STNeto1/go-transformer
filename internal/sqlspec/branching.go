@@ -80,7 +80,7 @@ func ResolveBranch(base TableSpec, branch TableBranchSpec) (ResolvedBranch, erro
 	}, nil
 }
 
-func BuildBackfillInsert(sourceTable string, branch ResolvedBranch) (*ast.InsertStatement, error) {
+func BuildBackfillInsert(sourceTable string, branch ResolvedBranch, opts ...func(*ast.SelectStatement)) (*ast.InsertStatement, error) {
 	if sourceTable == "" {
 		return nil, fmt.Errorf("source table is required")
 	}
@@ -106,13 +106,19 @@ func BuildBackfillInsert(sourceTable string, branch ResolvedBranch) (*ast.Insert
 		selectCols = append(selectCols, &ast.Identifier{Name: col.Name})
 	}
 
+	queryStmt := &ast.SelectStatement{
+		Columns: selectCols,
+		From:    []ast.TableReference{{Name: sourceTable}},
+	}
+
+	for _, fn := range opts {
+		fn(queryStmt)
+	}
+
 	return &ast.InsertStatement{
 		TableName: branch.Table.Name,
 		Columns:   insertCols,
-		Query: &ast.SelectStatement{
-			Columns: selectCols,
-			From:    []ast.TableReference{{Name: sourceTable}},
-		},
+		Query:     queryStmt,
 	}, nil
 }
 

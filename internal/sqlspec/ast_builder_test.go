@@ -8,6 +8,8 @@ import (
 )
 
 func TestBuildCreateTable(t *testing.T) {
+	t.Parallel()
+
 	stmt, err := BuildCreateTable(TableSpec{
 		Name: "people",
 		Columns: []ColumnSpec{
@@ -21,6 +23,8 @@ func TestBuildCreateTable(t *testing.T) {
 }
 
 func TestBuildCreateTableValidation(t *testing.T) {
+	t.Parallel()
+
 	_, err := BuildCreateTable(TableSpec{})
 	assert.Error(t, err)
 
@@ -29,6 +33,8 @@ func TestBuildCreateTableValidation(t *testing.T) {
 }
 
 func TestBuildInsert(t *testing.T) {
+	t.Parallel()
+
 	stmt, err := BuildInsert(InsertSpec{
 		Table:   "people",
 		Columns: []string{"id", "name"},
@@ -45,6 +51,8 @@ func TestBuildInsert(t *testing.T) {
 }
 
 func TestBuildInsertValidation(t *testing.T) {
+	t.Parallel()
+
 	_, err := BuildInsert(InsertSpec{})
 	assert.Error(t, err)
 
@@ -53,6 +61,8 @@ func TestBuildInsertValidation(t *testing.T) {
 }
 
 func TestBuildSelect(t *testing.T) {
+	t.Parallel()
+
 	stmt, err := BuildSelect(SelectSpec{Table: "people", Columns: []string{"id", "name"}})
 	require.NoError(t, err)
 	assert.Len(t, stmt.Columns, 2)
@@ -61,6 +71,8 @@ func TestBuildSelect(t *testing.T) {
 }
 
 func TestToExpression(t *testing.T) {
+	t.Parallel()
+
 	cases := []struct {
 		name  string
 		in    any
@@ -76,6 +88,8 @@ func TestToExpression(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
 			expr := ToExpression(tc.in)
 			if tc.isNil {
 				assert.Nil(t, expr)
