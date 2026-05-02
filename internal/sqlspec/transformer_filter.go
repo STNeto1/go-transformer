@@ -11,11 +11,23 @@ import (
 type FilterOperation string
 
 const (
-	FilterOperationEq FilterOperation = "eq"
+	FilterOperationEq         FilterOperation = "eq"
+	FilterOperationNe         FilterOperation = "ne"
+	FilterOperationContains   FilterOperation = "contains"
+	FilterOperationStartsWith FilterOperation = "startsWith"
+	FilterOperationEndsWith   FilterOperation = "endsWith"
+	FilterOperationGt         FilterOperation = "gt"
+	FilterOperationLt         FilterOperation = "lt"
 )
 
 var filterName = map[FilterOperation]string{
-	FilterOperationEq: "eq",
+	FilterOperationEq:         "eq",
+	FilterOperationNe:         "ne",
+	FilterOperationContains:   "contains",
+	FilterOperationStartsWith: "startsWith",
+	FilterOperationEndsWith:   "endsWith",
+	FilterOperationGt:         "gt",
+	FilterOperationLt:         "lt",
 }
 
 func (ss FilterOperation) String() string {
@@ -38,7 +50,7 @@ func DeriveFilter(base TableSpec, derivedTableName string, filter FilterRow) (Re
 	if filter.Column == "" {
 		return ResolvedBranch{}, nil, fmt.Errorf("filter column is required")
 	}
-	if filter.Operation != FilterOperationEq {
+	if _, ok := filterName[filter.Operation]; !ok {
 		return ResolvedBranch{}, nil, fmt.Errorf("unsupported filter operation %q", filter.Operation)
 	}
 
@@ -54,9 +66,9 @@ func DeriveFilter(base TableSpec, derivedTableName string, filter FilterRow) (Re
 	copy(cols, base.Columns)
 
 	selectedColumn := cols[colIndex]
-	rightExpr := ToExpression(filter.Value)
-	if rightExpr == nil {
-		return ResolvedBranch{}, nil, fmt.Errorf("unsupported filter value type %T", filter.Value)
+	whereExpr, err := buildFilterWhereExpr(selectedColumn, filter)
+	if err != nil {
+		return ResolvedBranch{}, nil, err
 	}
 
 	resolved := ResolvedBranch{
@@ -67,11 +79,7 @@ func DeriveFilter(base TableSpec, derivedTableName string, filter FilterRow) (Re
 	}
 
 	selectFn := func(selectAst *ast.SelectStatement) {
-		selectAst.Where = &ast.BinaryExpression{
-			Left:     &ast.Identifier{Name: selectedColumn.Name},
-			Operator: "=",
-			Right:    rightExpr,
-		}
+		selectAst.Where = whereExpr
 	}
 
 	stmt, err := BuildBackfillInsert(base.Name, resolved, selectFn)
@@ -80,4 +88,52 @@ func DeriveFilter(base TableSpec, derivedTableName string, filter FilterRow) (Re
 	}
 
 	return resolved, stmt, nil
+}
+
+func buildFilterWhereExpr(selectedColumn ColumnSpec, filter FilterRow) (ast.Expression, error) {
+	left := &ast.Identifier{Name: selectedColumn.Name}
+
+	switch filter.Operation {
+	case FilterOperationEq, FilterOperationNe, FilterOperationGt, FilterOperationLt:
+		rightExpr := ToExpression(filter.Value)
+		if rightExpr == nil {
+			return nil, fmt.Errorf("unsupported filter value type %T", filter.Value)
+		}
+
+		op := "="
+		switch filter.Operation {
+		case FilterOperationNe:
+			op = "!="
+		case FilterOperationGt:
+			op = ">"
+		case FilterOperationLt:
+			op = "<"
+		}
+
+		return &ast.BinaryExpression{Left: left, Operator: op, Right: rightExpr}, nil
+
+	case FilterOperationContains, FilterOperationStartsWith, FilterOperationEndsWith:
+		v, ok := filter.Value.(string)
+		if !ok {
+			return nil, fmt.Errorf("operation %q requires string value", filter.Operation)
+		}
+
+		pattern := v
+		switch filter.Operation {
+		case FilterOperationContains:
+			pattern = "%" + v + "%"
+		case FilterOperationStartsWith:
+			pattern = v + "%"
+		case FilterOperationEndsWith:
+			pattern = "%" + v
+		}
+
+		return &ast.BinaryExpression{
+			Left:     left,
+			Operator: "LIKE",
+			Right:    &ast.LiteralValue{Value: pattern, Type: "STRING"},
+		}, nil
+	default:
+		return nil, fmt.Errorf("unsupported filter operation %q", filter.Operation)
+	}
 }
