@@ -10,7 +10,7 @@
 6. [x] `ConstantColumn`
 7. [ ] `ComputeColumn`
 8. [x] `RenameColumns`
-9. [ ] `CastColumns`
+9. [x] `CastColumns`
 10. [ ] `FillReplace`
 11. [ ] `Deduplicate`
 12. [ ] `Aggregate`
