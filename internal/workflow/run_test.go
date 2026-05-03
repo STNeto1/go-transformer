@@ -2,6 +2,7 @@ package workflow
 
 import (
 	"database/sql"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -61,7 +62,7 @@ func TestRun_DataSourceFilter_AllAndAny(t *testing.T) {
 	require.Equal(t, 2, resultsAny[0].RowCount)
 }
 
-func TestRun_UnsupportedNodePanics(t *testing.T) {
+func TestRun_UnsupportedNodeReturnsStructuredError(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
 
@@ -90,9 +91,62 @@ func TestRun_UnsupportedNodePanics(t *testing.T) {
 		Sinks: []pipeline.Sink{{NodeID: "x", TargetTable: "out"}},
 	}
 
-	require.PanicsWithValue(t, "unsupported node type: NotSupportedYet", func() {
-		_, _ = Run(db, spec)
-	})
+	_, err = Run(db, spec)
+	require.Error(t, err)
+
+	var wfErr *WorkflowError
+	require.True(t, errors.As(err, &wfErr))
+	require.Equal(t, ErrorCodeUnsupportedNodeType, wfErr.Code)
+	require.Equal(t, "dispatch", wfErr.Stage)
+	require.Equal(t, "x", wfErr.NodeID)
+	require.Equal(t, "NotSupportedYet", wfErr.NodeType)
+}
+
+func TestRun_MissingSinkOutputRefReturnsStructuredError(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+
+	csvPath := writeCSV(t, "people.csv", "id,name,age,country\n1,Ana,20,BR\n")
+	spec := &pipeline.Spec{
+		PipelineID: "wf_sink",
+		Version:    1,
+		Nodes: []pipeline.Node{
+			{ID: "src", Type: "DataSource", Config: []byte(`{"format":"csv","path":"` + csvPath + `","mode":"infer"}`)},
+		},
+		Sinks: []pipeline.Sink{{NodeID: "missing", TargetTable: "out"}},
+	}
+
+	_, err := Run(db, spec)
+	require.Error(t, err)
+
+	var wfErr *WorkflowError
+	require.True(t, errors.As(err, &wfErr))
+	require.Equal(t, ErrorCodeSinkResolution, wfErr.Code)
+	require.Equal(t, "resolve_sink", wfErr.Stage)
+}
+
+func TestRun_TableNameCollisionReturnsStructuredError(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+
+	csvPath := writeCSV(t, "people.csv", "id,name,age,country\n1,Ana,20,BR\n")
+	spec := &pipeline.Spec{
+		PipelineID: "wf collision",
+		Version:    1,
+		Nodes: []pipeline.Node{
+			{ID: "A B", Type: "DataSource", Config: []byte(`{"format":"csv","path":"` + csvPath + `","mode":"infer"}`)},
+			{ID: "A_B", Type: "DataSource", Config: []byte(`{"format":"csv","path":"` + csvPath + `","mode":"infer"}`)},
+		},
+		Sinks: []pipeline.Sink{{NodeID: "A_B", TargetTable: "out"}},
+	}
+
+	_, err := Run(db, spec)
+	require.Error(t, err)
+
+	var wfErr *WorkflowError
+	require.True(t, errors.As(err, &wfErr))
+	require.Equal(t, ErrorCodeTableNameCollision, wfErr.Code)
+	require.Equal(t, "table_name", wfErr.Stage)
 }
 
 func openTestDB(t *testing.T) *sql.DB {

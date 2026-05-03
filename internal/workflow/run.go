@@ -1,6 +1,7 @@
 package workflow
 
 import (
+	"bytes"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -15,6 +16,58 @@ import (
 	"go-transformer/internal/sqlspec"
 )
 
+type ErrorCode string
+
+const (
+	ErrorCodeInvalidArgument      ErrorCode = "INVALID_ARGUMENT"
+	ErrorCodeUnsupportedNodeType  ErrorCode = "UNSUPPORTED_NODE_TYPE"
+	ErrorCodeDependencyResolution ErrorCode = "DEPENDENCY_RESOLUTION_FAILED"
+	ErrorCodeConfigDecode         ErrorCode = "CONFIG_DECODE_FAILED"
+	ErrorCodeDerive               ErrorCode = "DERIVE_FAILED"
+	ErrorCodeMaterialize          ErrorCode = "MATERIALIZE_FAILED"
+	ErrorCodeSinkResolution       ErrorCode = "SINK_RESOLUTION_FAILED"
+	ErrorCodeSinkCount            ErrorCode = "SINK_COUNT_FAILED"
+	ErrorCodeTableNameCollision   ErrorCode = "TABLE_NAME_COLLISION"
+	ErrorCodeGraphOrder           ErrorCode = "GRAPH_ORDER_FAILED"
+	ErrorCodeDependencyShape      ErrorCode = "DEPENDENCY_SHAPE_FAILED"
+)
+
+type WorkflowError struct {
+	Code     ErrorCode
+	NodeID   string
+	NodeType string
+	Stage    string
+	Message  string
+	Cause    error
+}
+
+func (e *WorkflowError) Error() string {
+	parts := make([]string, 0, 6)
+	if e.Code != "" {
+		parts = append(parts, string(e.Code))
+	}
+	if e.Stage != "" {
+		parts = append(parts, "stage="+e.Stage)
+	}
+	if e.NodeID != "" {
+		parts = append(parts, "node_id="+e.NodeID)
+	}
+	if e.NodeType != "" {
+		parts = append(parts, "node_type="+e.NodeType)
+	}
+	if e.Message != "" {
+		parts = append(parts, e.Message)
+	}
+	if e.Cause != nil {
+		parts = append(parts, "cause="+e.Cause.Error())
+	}
+	return strings.Join(parts, " ")
+}
+
+func (e *WorkflowError) Unwrap() error {
+	return e.Cause
+}
+
 var nonWord = regexp.MustCompile(`[^a-zA-Z0-9_]+`)
 
 type SinkResult struct {
@@ -26,55 +79,57 @@ type SinkResult struct {
 
 func Run(db *sql.DB, spec *pipeline.Spec) ([]SinkResult, error) {
 	if db == nil {
-		return nil, fmt.Errorf("db is required")
+		return nil, &WorkflowError{Code: ErrorCodeInvalidArgument, Stage: "run", Message: "db is required"}
 	}
 	if spec == nil {
-		return nil, fmt.Errorf("spec is required")
+		return nil, &WorkflowError{Code: ErrorCodeInvalidArgument, Stage: "run", Message: "spec is required"}
 	}
 
 	ordered, depsByNode, err := topologicalOrder(spec)
 	if err != nil {
-		return nil, err
+		return nil, &WorkflowError{Code: ErrorCodeGraphOrder, Stage: "topological_order", Message: "failed to compute node execution order", Cause: err}
 	}
 
 	state := make(map[string]sqlspec.TableSpec, len(spec.Nodes))
+	seenTableNames := make(map[string]string, len(spec.Nodes))
 
 	for _, node := range ordered {
 		tableName := nodeTableName(spec.PipelineID, node.ID)
+		if prior, exists := seenTableNames[tableName]; exists {
+			return nil, &WorkflowError{Code: ErrorCodeTableNameCollision, NodeID: node.ID, NodeType: node.Type, Stage: "table_name", Message: fmt.Sprintf("table name %q collides with node %q", tableName, prior)}
+		}
+		seenTableNames[tableName] = node.ID
+
 		switch node.Type {
 		case pipeline.NodeTypeDataSource:
 			if err := runDataSourceNode(db, node, tableName, state); err != nil {
-				return nil, fmt.Errorf("node %s (%s): %w", node.ID, node.Type, err)
+				return nil, err
 			}
 		case pipeline.NodeTypeFilter:
 			deps := depsByNode[node.ID]
 			if len(deps) != 1 {
-				return nil, fmt.Errorf("node %s (%s): requires exactly one input", node.ID, node.Type)
+				return nil, &WorkflowError{Code: ErrorCodeDependencyShape, NodeID: node.ID, NodeType: node.Type, Stage: "dispatch", Message: "requires exactly one input"}
 			}
 			if err := runFilterNode(db, node, tableName, deps[0], state); err != nil {
-				return nil, fmt.Errorf("node %s (%s): %w", node.ID, node.Type, err)
+				return nil, err
 			}
 		default:
-			panic(fmt.Sprintf("unsupported node type: %s", node.Type))
+			return nil, &WorkflowError{Code: ErrorCodeUnsupportedNodeType, NodeID: node.ID, NodeType: node.Type, Stage: "dispatch", Message: "node type is not supported in current workflow runtime"}
 		}
 	}
 
 	results := make([]SinkResult, 0, len(spec.Sinks))
 	for _, sink := range spec.Sinks {
-		table, ok := state[sink.NodeID]
+		outputRef := normalizeOutputRef(sink.NodeID)
+		table, ok := state[outputRef]
 		if !ok {
-			return nil, fmt.Errorf("sink node %q was not materialized", sink.NodeID)
+			return nil, &WorkflowError{Code: ErrorCodeSinkResolution, Stage: "resolve_sink", Message: fmt.Sprintf("sink node reference %q was not materialized", sink.NodeID)}
 		}
 		count, err := countRows(db, table.Name)
 		if err != nil {
-			return nil, fmt.Errorf("count sink rows for node %q: %w", sink.NodeID, err)
+			return nil, &WorkflowError{Code: ErrorCodeSinkCount, Stage: "sink_count", Message: fmt.Sprintf("failed counting sink rows for %q", sink.NodeID), Cause: err}
 		}
-		results = append(results, SinkResult{
-			NodeID:      sink.NodeID,
-			TargetTable: sink.TargetTable,
-			SourceTable: table.Name,
-			RowCount:    count,
-		})
+		results = append(results, SinkResult{NodeID: sink.NodeID, TargetTable: sink.TargetTable, SourceTable: table.Name, RowCount: count})
 	}
 
 	return results, nil
@@ -83,7 +138,7 @@ func Run(db *sql.DB, spec *pipeline.Spec) ([]SinkResult, error) {
 func runDataSourceNode(db *sql.DB, node pipeline.Node, tableName string, state map[string]sqlspec.TableSpec) error {
 	var cfg pipeline.DataSourceConfig
 	if err := decodeStrict(node.Config, &cfg); err != nil {
-		return err
+		return &WorkflowError{Code: ErrorCodeConfigDecode, NodeID: node.ID, NodeType: node.Type, Stage: "decode_config", Message: "failed to decode data source config", Cause: err}
 	}
 
 	resolved, stmt, err := sqlspec.DeriveDataSource(tableName, sqlspec.DataSourceSpec{
@@ -93,26 +148,26 @@ func runDataSourceNode(db *sql.DB, node pipeline.Node, tableName string, state m
 		Columns: mapColumns(cfg.Columns),
 	}, db)
 	if err != nil {
-		return err
+		return &WorkflowError{Code: ErrorCodeDerive, NodeID: node.ID, NodeType: node.Type, Stage: "derive", Message: "failed to derive data source SQL", Cause: err}
 	}
 
 	if err := materialize(db, resolved.Table, stmt); err != nil {
-		return err
+		return &WorkflowError{Code: ErrorCodeMaterialize, NodeID: node.ID, NodeType: node.Type, Stage: "materialize", Message: "failed to materialize node output", Cause: err}
 	}
 
-	state[node.ID] = resolved.Table
+	state[makeOutputRef(node.ID, "")] = resolved.Table
 	return nil
 }
 
 func runFilterNode(db *sql.DB, node pipeline.Node, tableName string, upstreamNodeID string, state map[string]sqlspec.TableSpec) error {
-	upstream, ok := state[upstreamNodeID]
+	upstream, ok := state[makeOutputRef(upstreamNodeID, "")]
 	if !ok {
-		return fmt.Errorf("upstream node %q table not found", upstreamNodeID)
+		return &WorkflowError{Code: ErrorCodeDependencyResolution, NodeID: node.ID, NodeType: node.Type, Stage: "resolve_input", Message: fmt.Sprintf("upstream node %q table not found", upstreamNodeID)}
 	}
 
 	var cfg pipeline.FilterConfig
 	if err := decodeStrict(node.Config, &cfg); err != nil {
-		return err
+		return &WorkflowError{Code: ErrorCodeConfigDecode, NodeID: node.ID, NodeType: node.Type, Stage: "decode_config", Message: "failed to decode filter config", Cause: err}
 	}
 
 	mode := sqlspec.ConditionalMode(strings.TrimSpace(cfg.Mode))
@@ -127,7 +182,7 @@ func runFilterNode(db *sql.DB, node pipeline.Node, tableName string, upstreamNod
 
 	predicate, err := buildFilterPredicate(upstream.Columns, rules, mode)
 	if err != nil {
-		return err
+		return &WorkflowError{Code: ErrorCodeDerive, NodeID: node.ID, NodeType: node.Type, Stage: "derive", Message: "failed to build filter predicate", Cause: err}
 	}
 
 	resolved := sqlspec.ResolvedBranch{Table: sqlspec.TableSpec{Name: tableName, Columns: slices.Clone(upstream.Columns)}}
@@ -135,14 +190,14 @@ func runFilterNode(db *sql.DB, node pipeline.Node, tableName string, upstreamNod
 		s.Where = predicate
 	})
 	if err != nil {
-		return err
+		return &WorkflowError{Code: ErrorCodeDerive, NodeID: node.ID, NodeType: node.Type, Stage: "derive", Message: "failed to derive filter SQL", Cause: err}
 	}
 
 	if err := materialize(db, resolved.Table, stmt); err != nil {
-		return err
+		return &WorkflowError{Code: ErrorCodeMaterialize, NodeID: node.ID, NodeType: node.Type, Stage: "materialize", Message: "failed to materialize node output", Cause: err}
 	}
 
-	state[node.ID] = resolved.Table
+	state[makeOutputRef(node.ID, "")] = resolved.Table
 	return nil
 }
 
@@ -254,6 +309,49 @@ func mapColumns(cols []pipeline.ColumnSpec) []sqlspec.ColumnSpec {
 	return out
 }
 
+func normalizeOutputRef(ref string) string {
+	base, label, err := splitOutputRef(ref)
+	if err != nil {
+		return strings.ToLower(strings.TrimSpace(ref))
+	}
+	if label == "" {
+		return strings.ToLower(base)
+	}
+	return strings.ToLower(base) + ":" + strings.ToLower(label)
+}
+
+func makeOutputRef(nodeID string, label string) string {
+	nodeID = strings.ToLower(strings.TrimSpace(nodeID))
+	label = strings.ToLower(strings.TrimSpace(label))
+	if label == "" {
+		return nodeID
+	}
+	return nodeID + ":" + label
+}
+
+func splitOutputRef(ref string) (string, string, error) {
+	ref = strings.TrimSpace(ref)
+	if ref == "" {
+		return "", "", fmt.Errorf("output reference is required")
+	}
+	parts := strings.Split(ref, ":")
+	if len(parts) > 2 {
+		return "", "", fmt.Errorf("invalid output reference %q", ref)
+	}
+	base := strings.TrimSpace(parts[0])
+	if base == "" {
+		return "", "", fmt.Errorf("node id is required")
+	}
+	if len(parts) == 1 {
+		return base, "", nil
+	}
+	label := strings.TrimSpace(parts[1])
+	if label == "" {
+		return "", "", fmt.Errorf("label is required when using node_id:label")
+	}
+	return base, label, nil
+}
+
 func nodeTableName(pipelineID string, nodeID string) string {
 	base := "wf_" + sanitizeName(pipelineID) + "_" + sanitizeName(nodeID)
 	return strings.ToLower(strings.Trim(base, "_"))
@@ -348,7 +446,7 @@ func extractDeps(node pipeline.Node) ([]string, error) {
 }
 
 func decodeStrict(data []byte, out any) error {
-	dec := json.NewDecoder(strings.NewReader(string(data)))
+	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(out); err != nil {
 		return err
