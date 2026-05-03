@@ -14,8 +14,8 @@
 10. [x] `FillReplace`
 11. [x] `Deduplicate`
 12. [x] `Aggregate`
-13. [ ] `MergeUnion` (implement `UNION ALL` first)
-14. [ ] `Join` (implement `INNER JOIN` first)
+13. [x] `MergeUnion` (mode available: `strict_positional` (default), `align_by_name`; set op: `UNION ALL`)
+14. [x] `Join` (mode available: `inner` (default), `left`)
 15. [ ] `Conditional`
 16. [ ] `Switch`
 17. [ ] `UnnestArray`
