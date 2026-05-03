@@ -16,7 +16,7 @@
 12. [x] `Aggregate`
 13. [x] `MergeUnion` (mode available: `strict_positional` (default), `align_by_name`; set op: `UNION ALL`)
 14. [x] `Join` (mode available: `inner` (default), `left`)
-15. [ ] `Conditional`
+15. [x] `Conditional` (mode available: `all` (default), `any`; empty rules -> all rows to `if`)
 16. [ ] `Switch`
 17. [ ] `UnnestArray`
 18. [ ] `PivotUnpivot`
