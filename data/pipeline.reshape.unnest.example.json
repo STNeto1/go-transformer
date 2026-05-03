@@ -1,0 +1,40 @@
+{
+  "pipeline_id": "example_unnest_v1",
+  "version": 1,
+  "nodes": [
+    {
+      "id": "src_unnest",
+      "type": "DataSource",
+      "config": {
+        "format": "csv",
+        "path": "data/reshape_unnest.csv",
+        "mode": "infer"
+      }
+    },
+    {
+      "id": "cast_tags",
+      "type": "CastColumns",
+      "inputs": ["src_unnest"],
+      "config": {
+        "casts": [
+          {"column": "tags", "sql_type": "INTEGER[]"}
+        ]
+      }
+    },
+    {
+      "id": "unnested",
+      "type": "UnnestArray",
+      "inputs": ["cast_tags"],
+      "config": {
+        "array_column": "tags",
+        "output_column": {"name": "tag", "sql_type": "INTEGER"}
+      }
+    }
+  ],
+  "sinks": [
+    {
+      "node_id": "unnested",
+      "target_table": "example_unnested_tags"
+    }
+  ]
+}

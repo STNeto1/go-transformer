@@ -1,0 +1,60 @@
+{
+  "pipeline_id": "example_mutation_v1",
+  "version": 1,
+  "nodes": [
+    {
+      "id": "src_people",
+      "type": "DataSource",
+      "config": {
+        "format": "csv",
+        "path": "data/people.csv",
+        "mode": "infer"
+      }
+    },
+    {
+      "id": "with_source",
+      "type": "ConstantColumn",
+      "inputs": ["src_people"],
+      "config": {
+        "column": {"name": "source", "sql_type": "VARCHAR"},
+        "value": "example"
+      }
+    },
+    {
+      "id": "with_label",
+      "type": "ComputeColumn",
+      "inputs": ["with_source"],
+      "config": {
+        "columns": [
+          {"name": "label", "sql_type": "VARCHAR", "expr": "{{name}} from {{country}}"}
+        ]
+      }
+    },
+    {
+      "id": "renamed",
+      "type": "RenameColumns",
+      "inputs": ["with_label"],
+      "config": {
+        "renames": [
+          {"from": "name", "to": "full_name"}
+        ]
+      }
+    },
+    {
+      "id": "casted",
+      "type": "CastColumns",
+      "inputs": ["renamed"],
+      "config": {
+        "casts": [
+          {"column": "age", "sql_type": "DOUBLE"}
+        ]
+      }
+    }
+  ],
+  "sinks": [
+    {
+      "node_id": "casted",
+      "target_table": "example_people_mutation"
+    }
+  ]
+}

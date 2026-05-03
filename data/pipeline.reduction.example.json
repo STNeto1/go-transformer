@@ -1,0 +1,44 @@
+{
+  "pipeline_id": "example_reduction_v1",
+  "version": 1,
+  "nodes": [
+    {
+      "id": "src_reduction",
+      "type": "DataSource",
+      "config": {
+        "format": "csv",
+        "path": "data/reduction.csv",
+        "mode": "infer"
+      }
+    },
+    {
+      "id": "dedup_country",
+      "type": "Deduplicate",
+      "inputs": ["src_reduction"],
+      "config": {
+        "columns": ["country"],
+        "keep": "first",
+        "order_by": [
+          {"column": "age", "direction": "desc"}
+        ]
+      }
+    },
+    {
+      "id": "country_counts",
+      "type": "Aggregate",
+      "inputs": ["dedup_country"],
+      "config": {
+        "group_by": ["country"],
+        "metrics": [
+          {"function": "count", "column": "*", "as": "rows_count"}
+        ]
+      }
+    }
+  ],
+  "sinks": [
+    {
+      "node_id": "country_counts",
+      "target_table": "example_country_counts"
+    }
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "pipeline_id": "example_unpivot_v1",
+  "version": 1,
+  "nodes": [
+    {
+      "id": "src_unpivot",
+      "type": "DataSource",
+      "config": {
+        "format": "csv",
+        "path": "data/reshape_unpivot.csv",
+        "mode": "infer"
+      }
+    },
+    {
+      "id": "unpivoted",
+      "type": "Unpivot",
+      "inputs": ["src_unpivot"],
+      "config": {
+        "passthrough": ["id"],
+        "name_column": {"name": "metric", "sql_type": "VARCHAR"},
+        "value_column": {"name": "val", "sql_type": "BIGINT"},
+        "in_columns": ["m1", "m2"]
+      }
+    }
+  ],
+  "sinks": [
+    {
+      "node_id": "unpivoted",
+      "target_table": "example_unpivoted_metrics"
+    }
+  ]
+}

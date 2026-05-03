@@ -1,0 +1,33 @@
+{
+  "pipeline_id": "example_pivot_v1",
+  "version": 1,
+  "nodes": [
+    {
+      "id": "src_pivot",
+      "type": "DataSource",
+      "config": {
+        "format": "csv",
+        "path": "data/reshape_pivot.csv",
+        "mode": "infer"
+      }
+    },
+    {
+      "id": "pivoted",
+      "type": "Pivot",
+      "inputs": ["src_pivot"],
+      "config": {
+        "group_by": ["id"],
+        "pivot_column": "region",
+        "value_column": "amount",
+        "agg_fn": "sum",
+        "in_values": ["north", "south"]
+      }
+    }
+  ],
+  "sinks": [
+    {
+      "node_id": "pivoted",
+      "target_table": "example_pivoted_amount"
+    }
+  ]
+}

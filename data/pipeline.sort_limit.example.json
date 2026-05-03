@@ -1,0 +1,39 @@
+{
+  "pipeline_id": "example_sort_limit_v1",
+  "version": 1,
+  "nodes": [
+    {
+      "id": "src_people",
+      "type": "DataSource",
+      "config": {
+        "format": "csv",
+        "path": "data/people.csv",
+        "mode": "infer"
+      }
+    },
+    {
+      "id": "sort_age",
+      "type": "Sort",
+      "inputs": ["src_people"],
+      "config": {
+        "keys": [
+          {"column": "age", "direction": "desc"}
+        ]
+      }
+    },
+    {
+      "id": "top_10",
+      "type": "Limit",
+      "inputs": ["sort_age"],
+      "config": {
+        "count": 10
+      }
+    }
+  ],
+  "sinks": [
+    {
+      "node_id": "top_10",
+      "target_table": "example_top_10_oldest"
+    }
+  ]
+}
