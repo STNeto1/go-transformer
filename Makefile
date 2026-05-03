@@ -5,13 +5,14 @@ DATA_DIR ?= data
 TELEMETRY_FORMAT ?= text
 TELEMETRY_LEVEL ?= basic
 
-.PHONY: help gen-data run-workloads run-transformations demo demo-transformations test
+.PHONY: help gen-data run-workloads run-transformations validate-pipeline demo demo-transformations test
 
 help:
 	@printf "Targets:\n"
 	@printf "  make gen-data       Generate CSV + Parquet demo data\n"
 	@printf "  make run-workloads  Run source-node workload scenarios\n"
 	@printf "  make run-transformations Run transformation examples\n"
+	@printf "  make validate-pipeline Validate pipeline JSON spec\n"
 	@printf "  make demo           Generate data, then run workloads\n"
 	@printf "  make demo-transformations Generate data, then run transformations\n"
 	@printf "  make test           Run Go test suite\n"
@@ -31,6 +32,10 @@ run-workloads:
 
 run-transformations:
 	go run ./cmd/run-transformations --preview $(PREVIEW) --data-dir $(DATA_DIR) --telemetry-format $(TELEMETRY_FORMAT) --telemetry-level $(TELEMETRY_LEVEL)
+
+validate-pipeline:
+	@if [ -z "$(FILE)" ]; then echo "Usage: make validate-pipeline FILE=path/to/pipeline.json"; exit 1; fi
+	go run ./cmd/validate-pipeline --file $(FILE)
 
 demo: gen-data run-workloads
 
