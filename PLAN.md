@@ -8,7 +8,7 @@
 4. [x] `Sort`
 5. [x] `LimitSample` (implemented `limit`)
 6. [x] `ConstantColumn`
-7. [ ] `ComputeColumn`
+7. [x] `ComputeColumn` (v1: `{{column}}` string templates + raw SQL expressions; no same-node computed-column references)
 8. [x] `RenameColumns`
 9. [x] `CastColumns`
 10. [x] `FillReplace`
