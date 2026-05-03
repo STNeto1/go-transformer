@@ -2,7 +2,7 @@
 
 ## Node Implementation Order
 
-1. [ ] `DataSource` (kinda at the end)
+1. [x] `DataSource` (v1: csv/parquet; modes: infer, declared, declared_with_check (strict order/name/type))
 2. [x] `SelectColumns`
 3. [x] `Filter`
 4. [x] `Sort`
