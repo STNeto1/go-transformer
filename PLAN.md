@@ -19,4 +19,4 @@
 15. [x] `Conditional` (mode available: `all` (default), `any`; empty rules -> all rows to `if`)
 16. [x] `Switch` (independent per-branch matching, multi-match allowed; default gets rows matching no branch)
 17. [x] `UnnestArray` (v1: single-array unnest, append output column, empty/null arrays emit no rows)
-18. [ ] `PivotUnpivot`
+18. [x] `PivotUnpivot` (v1: `Pivot` with `sum`/`count`, and `Unpivot`)
