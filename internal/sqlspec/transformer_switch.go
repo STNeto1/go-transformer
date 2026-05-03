@@ -21,9 +21,9 @@ type SwitchSpec struct {
 }
 
 type SwitchResult struct {
-	Branches      map[string]ResolvedBranch
-	Backfills     map[string]*ast.InsertStatement
-	DefaultBranch ResolvedBranch
+	Branches        map[string]ResolvedBranch
+	Backfills       map[string]*ast.InsertStatement
+	DefaultBranch   ResolvedBranch
 	DefaultBackfill *ast.InsertStatement
 }
 

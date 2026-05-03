@@ -66,7 +66,7 @@ func TestDeriveComputeColumns_CaseInsensitiveTemplateColumnMatch(t *testing.T) {
 	t.Parallel()
 
 	base := TableSpec{
-		Name: "people",
+		Name:    "people",
 		Columns: []ColumnSpec{{Name: "First_Name", SQLType: "varchar"}, {Name: "Last_Name", SQLType: "varchar"}},
 	}
 
