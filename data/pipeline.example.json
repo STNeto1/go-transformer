@@ -1,0 +1,47 @@
+{
+  "pipeline_id": "people_filter_v1",
+  "version": 1,
+  "defaults": {
+    "telemetry_format": "json",
+    "telemetry_level": "basic"
+  },
+  "nodes": [
+    {
+      "id": "src_people",
+      "type": "DataSource",
+      "config": {
+        "format": "csv",
+        "path": "data/people.csv",
+        "mode": "infer"
+      }
+    },
+    {
+      "id": "people_filtered",
+      "type": "Filter",
+      "inputs": [
+        "src_people"
+      ],
+      "config": {
+        "mode": "all",
+        "rules": [
+          {
+            "column": "age",
+            "operation": "gt",
+            "value": 40
+          },
+          {
+            "column": "country",
+            "operation": "contains",
+            "value": "U"
+          }
+        ]
+      }
+    }
+  ],
+  "sinks": [
+    {
+      "node_id": "people_filtered",
+      "target_table": "people_filtered_out"
+    }
+  ]
+}

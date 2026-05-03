@@ -5,7 +5,7 @@ DATA_DIR ?= data
 TELEMETRY_FORMAT ?= text
 TELEMETRY_LEVEL ?= basic
 
-.PHONY: help gen-data run-workloads run-transformations validate-pipeline demo demo-transformations test
+.PHONY: help gen-data run-workloads run-transformations validate-pipeline run-pipeline demo demo-transformations test
 
 help:
 	@printf "Targets:\n"
@@ -13,6 +13,7 @@ help:
 	@printf "  make run-workloads  Run source-node workload scenarios\n"
 	@printf "  make run-transformations Run transformation examples\n"
 	@printf "  make validate-pipeline Validate pipeline JSON spec\n"
+	@printf "  make run-pipeline   Execute a pipeline JSON workflow\n"
 	@printf "  make demo           Generate data, then run workloads\n"
 	@printf "  make demo-transformations Generate data, then run transformations\n"
 	@printf "  make test           Run Go test suite\n"
@@ -36,6 +37,10 @@ run-transformations:
 validate-pipeline:
 	@if [ -z "$(FILE)" ]; then echo "Usage: make validate-pipeline FILE=path/to/pipeline.json"; exit 1; fi
 	go run ./cmd/validate-pipeline --file $(FILE)
+
+run-pipeline:
+	@if [ -z "$(FILE)" ]; then echo "Usage: make run-pipeline FILE=path/to/pipeline.json"; exit 1; fi
+	go run ./cmd/run-pipeline --file $(FILE)
 
 demo: gen-data run-workloads
 
