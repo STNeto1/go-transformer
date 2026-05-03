@@ -127,3 +127,77 @@ func TestParseAndValidateJSON_JoinNeedsNamedInputs(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "join inputs must be an object with left/right")
 }
+
+func TestParseAndValidateJSON_ValidSelectSortLimitAndSinkLabel(t *testing.T) {
+	payload := []byte(`{
+		"pipeline_id": "p2",
+		"version": 1,
+		"nodes": [
+			{"id": "src", "type": "DataSource", "config": {"format": "csv", "path": "data/people.csv", "mode": "infer"}},
+			{"id": "sel", "type": "SelectColumns", "inputs": ["src"], "config": {"columns": ["id", "age", "country"]}},
+			{"id": "sort", "type": "Sort", "inputs": ["sel"], "config": {"keys": [{"column": "age", "direction": "desc", "nulls": "last"}]}},
+			{"id": "lim", "type": "Limit", "inputs": ["sort"], "config": {"count": 10}}
+		],
+		"sinks": [{"node_id": "lim", "target_table": "out"}]
+	}`)
+
+	_, err := ParseAndValidateJSON(payload)
+	require.NoError(t, err)
+}
+
+func TestParseAndValidateJSON_ValidConditionalAndSwitchSinkLabels(t *testing.T) {
+	payload := []byte(`{
+		"pipeline_id": "p3",
+		"version": 1,
+		"nodes": [
+			{"id": "src", "type": "DataSource", "config": {"format": "csv", "path": "data/people.csv", "mode": "infer"}},
+			{"id": "cond", "type": "Conditional", "inputs": ["src"], "config": {"mode": "all", "rules": [{"column": "age", "operation": "gt", "value": 30}]}},
+			{"id": "sw", "type": "Switch", "inputs": ["src"], "config": {"branches": [
+				{"label": "vip", "mode": "all", "rules": [{"column": "country", "operation": "eq", "value": "US"}]},
+				{"label": "regular", "mode": "any", "rules": [{"column": "country", "operation": "eq", "value": "BR"}]}
+			]}}
+		],
+		"sinks": [
+			{"node_id": "cond:IF", "target_table": "cond_if"},
+			{"node_id": "cond:else", "target_table": "cond_else"},
+			{"node_id": "sw:DEFAULT", "target_table": "sw_default"},
+			{"node_id": "sw:Vip", "target_table": "sw_vip"}
+		]
+	}`)
+
+	_, err := ParseAndValidateJSON(payload)
+	require.NoError(t, err)
+}
+
+func TestParseAndValidateJSON_InvalidSinkLabelForNonBranchNode(t *testing.T) {
+	payload := []byte(`{
+		"pipeline_id": "p4",
+		"version": 1,
+		"nodes": [
+			{"id": "src", "type": "DataSource", "config": {"format": "csv", "path": "data/people.csv", "mode": "infer"}}
+		],
+		"sinks": [{"node_id": "src:if", "target_table": "out"}]
+	}`)
+
+	_, err := ParseAndValidateJSON(payload)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "SINK_INVALID_LABEL")
+}
+
+func TestParseAndValidateJSON_InvalidSwitchLabel(t *testing.T) {
+	payload := []byte(`{
+		"pipeline_id": "p5",
+		"version": 1,
+		"nodes": [
+			{"id": "src", "type": "DataSource", "config": {"format": "csv", "path": "data/people.csv", "mode": "infer"}},
+			{"id": "sw", "type": "Switch", "inputs": ["src"], "config": {"branches": [
+				{"label": "vip", "rules": [{"column": "country", "operation": "eq", "value": "US"}]}
+			]}}
+		],
+		"sinks": [{"node_id": "sw:gold", "target_table": "out"}]
+	}`)
+
+	_, err := ParseAndValidateJSON(payload)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "SINK_INVALID_LABEL")
+}

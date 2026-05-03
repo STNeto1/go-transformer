@@ -9,11 +9,26 @@ import (
 )
 
 const (
-	NodeTypeDataSource = "DataSource"
-	NodeTypeFilter     = "Filter"
-	NodeTypeAggregate  = "Aggregate"
-	NodeTypeMergeUnion = "MergeUnion"
-	NodeTypeJoin       = "Join"
+	NodeTypeDataSource     = "DataSource"
+	NodeTypeSelectColumns  = "SelectColumns"
+	NodeTypeFilter         = "Filter"
+	NodeTypeSort           = "Sort"
+	NodeTypeLimit          = "Limit"
+	NodeTypeLimitSample    = "LimitSample"
+	NodeTypeConstantColumn = "ConstantColumn"
+	NodeTypeComputeColumn  = "ComputeColumn"
+	NodeTypeRenameColumns  = "RenameColumns"
+	NodeTypeCastColumns    = "CastColumns"
+	NodeTypeFillReplace    = "FillReplace"
+	NodeTypeDeduplicate    = "Deduplicate"
+	NodeTypeAggregate      = "Aggregate"
+	NodeTypeMergeUnion     = "MergeUnion"
+	NodeTypeJoin           = "Join"
+	NodeTypeConditional    = "Conditional"
+	NodeTypeSwitch         = "Switch"
+	NodeTypeUnnestArray    = "UnnestArray"
+	NodeTypePivot          = "Pivot"
+	NodeTypeUnpivot        = "Unpivot"
 )
 
 type ValidationIssue struct {
@@ -169,6 +184,183 @@ func validateNode(node Node, idx int) ([]ValidationIssue, []string) {
 		}
 		return issues, deps
 
+	case NodeTypeSelectColumns:
+		deps, depIssues := parseArrayInputs(node.Inputs, 1, 1, path+".inputs")
+		issues = append(issues, depIssues...)
+		var cfg SelectColumnsConfig
+		if err := decodeStrict(node.Config, &cfg); err != nil {
+			issues = append(issues, ValidationIssue{Code: "SCHEMA_INVALID", Message: err.Error(), Path: path + ".config"})
+			return issues, deps
+		}
+		if len(cfg.Columns) == 0 {
+			issues = append(issues, ValidationIssue{Code: "SCHEMA_REQUIRED", Message: "at least one column is required", Path: path + ".config.columns"})
+		}
+		for i, c := range cfg.Columns {
+			if strings.TrimSpace(c) == "" {
+				issues = append(issues, ValidationIssue{Code: "SCHEMA_REQUIRED", Message: "column name is required", Path: fmt.Sprintf("%s.config.columns[%d]", path, i)})
+			}
+		}
+		return issues, deps
+
+	case NodeTypeSort:
+		deps, depIssues := parseArrayInputs(node.Inputs, 1, 1, path+".inputs")
+		issues = append(issues, depIssues...)
+		var cfg SortConfig
+		if err := decodeStrict(node.Config, &cfg); err != nil {
+			issues = append(issues, ValidationIssue{Code: "SCHEMA_INVALID", Message: err.Error(), Path: path + ".config"})
+			return issues, deps
+		}
+		if len(cfg.Keys) == 0 {
+			issues = append(issues, ValidationIssue{Code: "SCHEMA_REQUIRED", Message: "at least one sort key is required", Path: path + ".config.keys"})
+		}
+		for i, key := range cfg.Keys {
+			if strings.TrimSpace(key.Column) == "" {
+				issues = append(issues, ValidationIssue{Code: "SCHEMA_REQUIRED", Message: "sort key column is required", Path: fmt.Sprintf("%s.config.keys[%d].column", path, i)})
+			}
+			if key.Direction != "" && !slices.Contains([]string{"asc", "desc"}, key.Direction) {
+				issues = append(issues, ValidationIssue{Code: "SCHEMA_INVALID", Message: "direction must be asc or desc", Path: fmt.Sprintf("%s.config.keys[%d].direction", path, i)})
+			}
+			if key.Nulls != "" && !slices.Contains([]string{"first", "last"}, key.Nulls) {
+				issues = append(issues, ValidationIssue{Code: "SCHEMA_INVALID", Message: "nulls must be first or last", Path: fmt.Sprintf("%s.config.keys[%d].nulls", path, i)})
+			}
+		}
+		return issues, deps
+
+	case NodeTypeLimit, NodeTypeLimitSample:
+		deps, depIssues := parseArrayInputs(node.Inputs, 1, 1, path+".inputs")
+		issues = append(issues, depIssues...)
+		var cfg LimitConfig
+		if err := decodeStrict(node.Config, &cfg); err != nil {
+			issues = append(issues, ValidationIssue{Code: "SCHEMA_INVALID", Message: err.Error(), Path: path + ".config"})
+			return issues, deps
+		}
+		if cfg.Count <= 0 {
+			issues = append(issues, ValidationIssue{Code: "SCHEMA_INVALID", Message: "count must be greater than zero", Path: path + ".config.count"})
+		}
+		if cfg.Offset != nil && *cfg.Offset < 0 {
+			issues = append(issues, ValidationIssue{Code: "SCHEMA_INVALID", Message: "offset must be >= 0", Path: path + ".config.offset"})
+		}
+		return issues, deps
+
+	case NodeTypeConstantColumn:
+		deps, depIssues := parseArrayInputs(node.Inputs, 1, 1, path+".inputs")
+		issues = append(issues, depIssues...)
+		var cfg ConstantColumnConfig
+		if err := decodeStrict(node.Config, &cfg); err != nil {
+			issues = append(issues, ValidationIssue{Code: "SCHEMA_INVALID", Message: err.Error(), Path: path + ".config"})
+			return issues, deps
+		}
+		if strings.TrimSpace(cfg.Column.Name) == "" {
+			issues = append(issues, ValidationIssue{Code: "SCHEMA_REQUIRED", Message: "column name is required", Path: path + ".config.column.name"})
+		}
+		if strings.TrimSpace(cfg.Column.SQLType) == "" {
+			issues = append(issues, ValidationIssue{Code: "SCHEMA_REQUIRED", Message: "column sql_type is required", Path: path + ".config.column.sql_type"})
+		}
+		return issues, deps
+
+	case NodeTypeComputeColumn:
+		deps, depIssues := parseArrayInputs(node.Inputs, 1, 1, path+".inputs")
+		issues = append(issues, depIssues...)
+		var cfg ComputeColumnsConfig
+		if err := decodeStrict(node.Config, &cfg); err != nil {
+			issues = append(issues, ValidationIssue{Code: "SCHEMA_INVALID", Message: err.Error(), Path: path + ".config"})
+			return issues, deps
+		}
+		if len(cfg.Columns) == 0 {
+			issues = append(issues, ValidationIssue{Code: "SCHEMA_REQUIRED", Message: "at least one compute column is required", Path: path + ".config.columns"})
+		}
+		for i, c := range cfg.Columns {
+			if strings.TrimSpace(c.Name) == "" {
+				issues = append(issues, ValidationIssue{Code: "SCHEMA_REQUIRED", Message: "compute column name is required", Path: fmt.Sprintf("%s.config.columns[%d].name", path, i)})
+			}
+			if strings.TrimSpace(c.SQLType) == "" {
+				issues = append(issues, ValidationIssue{Code: "SCHEMA_REQUIRED", Message: "compute column sql_type is required", Path: fmt.Sprintf("%s.config.columns[%d].sql_type", path, i)})
+			}
+			if strings.TrimSpace(c.Expr) == "" {
+				issues = append(issues, ValidationIssue{Code: "SCHEMA_REQUIRED", Message: "compute expression is required", Path: fmt.Sprintf("%s.config.columns[%d].expr", path, i)})
+			}
+		}
+		return issues, deps
+
+	case NodeTypeRenameColumns:
+		deps, depIssues := parseArrayInputs(node.Inputs, 1, 1, path+".inputs")
+		issues = append(issues, depIssues...)
+		var cfg RenameColumnsConfig
+		if err := decodeStrict(node.Config, &cfg); err != nil {
+			issues = append(issues, ValidationIssue{Code: "SCHEMA_INVALID", Message: err.Error(), Path: path + ".config"})
+			return issues, deps
+		}
+		if len(cfg.Renames) == 0 {
+			issues = append(issues, ValidationIssue{Code: "SCHEMA_REQUIRED", Message: "at least one rename is required", Path: path + ".config.renames"})
+		}
+		for i, r := range cfg.Renames {
+			if strings.TrimSpace(r.From) == "" {
+				issues = append(issues, ValidationIssue{Code: "SCHEMA_REQUIRED", Message: "rename from is required", Path: fmt.Sprintf("%s.config.renames[%d].from", path, i)})
+			}
+			if strings.TrimSpace(r.To) == "" {
+				issues = append(issues, ValidationIssue{Code: "SCHEMA_REQUIRED", Message: "rename to is required", Path: fmt.Sprintf("%s.config.renames[%d].to", path, i)})
+			}
+		}
+		return issues, deps
+
+	case NodeTypeCastColumns:
+		deps, depIssues := parseArrayInputs(node.Inputs, 1, 1, path+".inputs")
+		issues = append(issues, depIssues...)
+		var cfg CastColumnsConfig
+		if err := decodeStrict(node.Config, &cfg); err != nil {
+			issues = append(issues, ValidationIssue{Code: "SCHEMA_INVALID", Message: err.Error(), Path: path + ".config"})
+			return issues, deps
+		}
+		if len(cfg.Casts) == 0 {
+			issues = append(issues, ValidationIssue{Code: "SCHEMA_REQUIRED", Message: "at least one cast is required", Path: path + ".config.casts"})
+		}
+		for i, c := range cfg.Casts {
+			if strings.TrimSpace(c.Column) == "" {
+				issues = append(issues, ValidationIssue{Code: "SCHEMA_REQUIRED", Message: "cast column is required", Path: fmt.Sprintf("%s.config.casts[%d].column", path, i)})
+			}
+			if strings.TrimSpace(c.SQLType) == "" {
+				issues = append(issues, ValidationIssue{Code: "SCHEMA_REQUIRED", Message: "cast sql_type is required", Path: fmt.Sprintf("%s.config.casts[%d].sql_type", path, i)})
+			}
+		}
+		return issues, deps
+
+	case NodeTypeFillReplace:
+		deps, depIssues := parseArrayInputs(node.Inputs, 1, 1, path+".inputs")
+		issues = append(issues, depIssues...)
+		var cfg FillReplaceConfig
+		if err := decodeStrict(node.Config, &cfg); err != nil {
+			issues = append(issues, ValidationIssue{Code: "SCHEMA_INVALID", Message: err.Error(), Path: path + ".config"})
+			return issues, deps
+		}
+		if len(cfg.Rules) == 0 {
+			issues = append(issues, ValidationIssue{Code: "SCHEMA_REQUIRED", Message: "at least one fill/replace rule is required", Path: path + ".config.rules"})
+		}
+		for i, r := range cfg.Rules {
+			if strings.TrimSpace(r.Column) == "" {
+				issues = append(issues, ValidationIssue{Code: "SCHEMA_REQUIRED", Message: "rule column is required", Path: fmt.Sprintf("%s.config.rules[%d].column", path, i)})
+			}
+		}
+		return issues, deps
+
+	case NodeTypeDeduplicate:
+		deps, depIssues := parseArrayInputs(node.Inputs, 1, 1, path+".inputs")
+		issues = append(issues, depIssues...)
+		var cfg DeduplicateConfig
+		if err := decodeStrict(node.Config, &cfg); err != nil {
+			issues = append(issues, ValidationIssue{Code: "SCHEMA_INVALID", Message: err.Error(), Path: path + ".config"})
+			return issues, deps
+		}
+		if len(cfg.Columns) == 0 {
+			issues = append(issues, ValidationIssue{Code: "SCHEMA_REQUIRED", Message: "at least one deduplicate column is required", Path: path + ".config.columns"})
+		}
+		if cfg.Keep != "" && !slices.Contains([]string{"first", "last"}, cfg.Keep) {
+			issues = append(issues, ValidationIssue{Code: "SCHEMA_INVALID", Message: "keep must be first or last", Path: path + ".config.keep"})
+		}
+		if len(cfg.OrderBy) == 0 {
+			issues = append(issues, ValidationIssue{Code: "SCHEMA_REQUIRED", Message: "at least one order_by key is required", Path: path + ".config.order_by"})
+		}
+		return issues, deps
+
 	case NodeTypeAggregate:
 		deps, depIssues := parseArrayInputs(node.Inputs, 1, 1, path+".inputs")
 		issues = append(issues, depIssues...)
@@ -230,6 +422,137 @@ func validateNode(node Node, idx int) ([]ValidationIssue, []string) {
 		}
 		return issues, deps
 
+	case NodeTypeConditional:
+		deps, depIssues := parseArrayInputs(node.Inputs, 1, 1, path+".inputs")
+		issues = append(issues, depIssues...)
+		var cfg ConditionalConfig
+		if err := decodeStrict(node.Config, &cfg); err != nil {
+			issues = append(issues, ValidationIssue{Code: "SCHEMA_INVALID", Message: err.Error(), Path: path + ".config"})
+			return issues, deps
+		}
+		if cfg.Mode != "" && cfg.Mode != "all" && cfg.Mode != "any" {
+			issues = append(issues, ValidationIssue{Code: "SCHEMA_INVALID", Message: "mode must be all or any", Path: path + ".config.mode"})
+		}
+		for i, rule := range cfg.Rules {
+			if strings.TrimSpace(rule.Column) == "" {
+				issues = append(issues, ValidationIssue{Code: "SCHEMA_REQUIRED", Message: "rule column is required", Path: fmt.Sprintf("%s.config.rules[%d].column", path, i)})
+			}
+			if !slices.Contains([]string{"eq", "ne", "contains", "startsWith", "endsWith", "gt", "lt"}, rule.Operation) {
+				issues = append(issues, ValidationIssue{Code: "SCHEMA_INVALID", Message: "unsupported rule operation", Path: fmt.Sprintf("%s.config.rules[%d].operation", path, i)})
+			}
+		}
+		return issues, deps
+
+	case NodeTypeSwitch:
+		deps, depIssues := parseArrayInputs(node.Inputs, 1, 1, path+".inputs")
+		issues = append(issues, depIssues...)
+		var cfg SwitchConfig
+		if err := decodeStrict(node.Config, &cfg); err != nil {
+			issues = append(issues, ValidationIssue{Code: "SCHEMA_INVALID", Message: err.Error(), Path: path + ".config"})
+			return issues, deps
+		}
+		if len(cfg.Branches) == 0 {
+			issues = append(issues, ValidationIssue{Code: "SCHEMA_REQUIRED", Message: "at least one branch is required", Path: path + ".config.branches"})
+		}
+		seenLabels := map[string]struct{}{}
+		for i, b := range cfg.Branches {
+			if strings.TrimSpace(b.Label) == "" {
+				issues = append(issues, ValidationIssue{Code: "SCHEMA_REQUIRED", Message: "branch label is required", Path: fmt.Sprintf("%s.config.branches[%d].label", path, i)})
+			}
+			if b.Mode != "" && b.Mode != "all" && b.Mode != "any" {
+				issues = append(issues, ValidationIssue{Code: "SCHEMA_INVALID", Message: "mode must be all or any", Path: fmt.Sprintf("%s.config.branches[%d].mode", path, i)})
+			}
+			if strings.EqualFold(strings.TrimSpace(b.Label), "default") {
+				issues = append(issues, ValidationIssue{Code: "SCHEMA_INVALID", Message: "branch label default is reserved", Path: fmt.Sprintf("%s.config.branches[%d].label", path, i)})
+			}
+			key := strings.ToLower(strings.TrimSpace(b.Label))
+			if key != "" {
+				if _, exists := seenLabels[key]; exists {
+					issues = append(issues, ValidationIssue{Code: "SCHEMA_INVALID", Message: "duplicate branch label", Path: fmt.Sprintf("%s.config.branches[%d].label", path, i)})
+				} else {
+					seenLabels[key] = struct{}{}
+				}
+			}
+			for j, rule := range b.Rules {
+				if strings.TrimSpace(rule.Column) == "" {
+					issues = append(issues, ValidationIssue{Code: "SCHEMA_REQUIRED", Message: "rule column is required", Path: fmt.Sprintf("%s.config.branches[%d].rules[%d].column", path, i, j)})
+				}
+				if !slices.Contains([]string{"eq", "ne", "contains", "startsWith", "endsWith", "gt", "lt"}, rule.Operation) {
+					issues = append(issues, ValidationIssue{Code: "SCHEMA_INVALID", Message: "unsupported rule operation", Path: fmt.Sprintf("%s.config.branches[%d].rules[%d].operation", path, i, j)})
+				}
+			}
+		}
+		return issues, deps
+
+	case NodeTypeUnnestArray:
+		deps, depIssues := parseArrayInputs(node.Inputs, 1, 1, path+".inputs")
+		issues = append(issues, depIssues...)
+		var cfg UnnestArrayConfig
+		if err := decodeStrict(node.Config, &cfg); err != nil {
+			issues = append(issues, ValidationIssue{Code: "SCHEMA_INVALID", Message: err.Error(), Path: path + ".config"})
+			return issues, deps
+		}
+		if strings.TrimSpace(cfg.ArrayColumn) == "" {
+			issues = append(issues, ValidationIssue{Code: "SCHEMA_REQUIRED", Message: "array_column is required", Path: path + ".config.array_column"})
+		}
+		if strings.TrimSpace(cfg.OutputColumn.Name) == "" {
+			issues = append(issues, ValidationIssue{Code: "SCHEMA_REQUIRED", Message: "output column name is required", Path: path + ".config.output_column.name"})
+		}
+		if strings.TrimSpace(cfg.OutputColumn.SQLType) == "" {
+			issues = append(issues, ValidationIssue{Code: "SCHEMA_REQUIRED", Message: "output column sql_type is required", Path: path + ".config.output_column.sql_type"})
+		}
+		return issues, deps
+
+	case NodeTypePivot:
+		deps, depIssues := parseArrayInputs(node.Inputs, 1, 1, path+".inputs")
+		issues = append(issues, depIssues...)
+		var cfg PivotConfig
+		if err := decodeStrict(node.Config, &cfg); err != nil {
+			issues = append(issues, ValidationIssue{Code: "SCHEMA_INVALID", Message: err.Error(), Path: path + ".config"})
+			return issues, deps
+		}
+		if len(cfg.GroupBy) == 0 {
+			issues = append(issues, ValidationIssue{Code: "SCHEMA_REQUIRED", Message: "group_by is required", Path: path + ".config.group_by"})
+		}
+		if strings.TrimSpace(cfg.PivotColumn) == "" {
+			issues = append(issues, ValidationIssue{Code: "SCHEMA_REQUIRED", Message: "pivot_column is required", Path: path + ".config.pivot_column"})
+		}
+		if strings.TrimSpace(cfg.ValueColumn) == "" {
+			issues = append(issues, ValidationIssue{Code: "SCHEMA_REQUIRED", Message: "value_column is required", Path: path + ".config.value_column"})
+		}
+		if cfg.AggFn != "" && !slices.Contains([]string{"sum", "count"}, cfg.AggFn) {
+			issues = append(issues, ValidationIssue{Code: "SCHEMA_INVALID", Message: "agg_fn must be sum or count", Path: path + ".config.agg_fn"})
+		}
+		if len(cfg.InValues) == 0 {
+			issues = append(issues, ValidationIssue{Code: "SCHEMA_REQUIRED", Message: "in_values is required", Path: path + ".config.in_values"})
+		}
+		return issues, deps
+
+	case NodeTypeUnpivot:
+		deps, depIssues := parseArrayInputs(node.Inputs, 1, 1, path+".inputs")
+		issues = append(issues, depIssues...)
+		var cfg UnpivotConfig
+		if err := decodeStrict(node.Config, &cfg); err != nil {
+			issues = append(issues, ValidationIssue{Code: "SCHEMA_INVALID", Message: err.Error(), Path: path + ".config"})
+			return issues, deps
+		}
+		if len(cfg.InColumns) == 0 {
+			issues = append(issues, ValidationIssue{Code: "SCHEMA_REQUIRED", Message: "in_columns is required", Path: path + ".config.in_columns"})
+		}
+		if strings.TrimSpace(cfg.NameColumn.Name) == "" {
+			issues = append(issues, ValidationIssue{Code: "SCHEMA_REQUIRED", Message: "name_column.name is required", Path: path + ".config.name_column.name"})
+		}
+		if strings.TrimSpace(cfg.NameColumn.SQLType) == "" {
+			issues = append(issues, ValidationIssue{Code: "SCHEMA_REQUIRED", Message: "name_column.sql_type is required", Path: path + ".config.name_column.sql_type"})
+		}
+		if strings.TrimSpace(cfg.ValueColumn.Name) == "" {
+			issues = append(issues, ValidationIssue{Code: "SCHEMA_REQUIRED", Message: "value_column.name is required", Path: path + ".config.value_column.name"})
+		}
+		if strings.TrimSpace(cfg.ValueColumn.SQLType) == "" {
+			issues = append(issues, ValidationIssue{Code: "SCHEMA_REQUIRED", Message: "value_column.sql_type is required", Path: path + ".config.value_column.sql_type"})
+		}
+		return issues, deps
+
 	default:
 		issues = append(issues, ValidationIssue{Code: "SCHEMA_INVALID", Message: fmt.Sprintf("unsupported node type %q", node.Type), Path: path + ".type"})
 		return issues, nil
@@ -261,16 +584,45 @@ func validateGraphSoundness(spec *Spec, nodeByID map[string]int, depsByNode map[
 		}
 	}
 
+	switchLabels := buildSwitchLabelsByNode(spec)
+
 	for i, sink := range spec.Sinks {
 		if strings.TrimSpace(sink.NodeID) == "" {
 			issues = append(issues, ValidationIssue{Code: "SCHEMA_REQUIRED", Message: "sink node_id is required", Path: fmt.Sprintf("$.sinks[%d].node_id", i)})
 			continue
 		}
+		sinkNodeID, sinkLabel, parseErr := parseSinkNodeRef(sink.NodeID)
+		if parseErr != nil {
+			issues = append(issues, ValidationIssue{Code: "SCHEMA_INVALID", Message: parseErr.Error(), Path: fmt.Sprintf("$.sinks[%d].node_id", i)})
+			continue
+		}
 		if strings.TrimSpace(sink.TargetTable) == "" {
 			issues = append(issues, ValidationIssue{Code: "SCHEMA_REQUIRED", Message: "sink target_table is required", Path: fmt.Sprintf("$.sinks[%d].target_table", i)})
 		}
-		if _, exists := nodeByID[sink.NodeID]; !exists {
-			issues = append(issues, ValidationIssue{Code: "SINK_UNKNOWN_NODE", Message: fmt.Sprintf("sink references unknown node %q", sink.NodeID), Path: fmt.Sprintf("$.sinks[%d].node_id", i)})
+		nodeIdx, exists := nodeByID[sinkNodeID]
+		if !exists {
+			issues = append(issues, ValidationIssue{Code: "SINK_UNKNOWN_NODE", Message: fmt.Sprintf("sink references unknown node %q", sinkNodeID), Path: fmt.Sprintf("$.sinks[%d].node_id", i)})
+			continue
+		}
+		nodeType := spec.Nodes[nodeIdx].Type
+		if sinkLabel == "" {
+			continue
+		}
+		switch nodeType {
+		case NodeTypeConditional:
+			if sinkLabel != "if" && sinkLabel != "else" {
+				issues = append(issues, ValidationIssue{Code: "SINK_INVALID_LABEL", Message: "conditional sink label must be if or else", Path: fmt.Sprintf("$.sinks[%d].node_id", i)})
+			}
+		case NodeTypeSwitch:
+			allowed, ok := switchLabels[sinkNodeID]
+			if !ok {
+				allowed = map[string]struct{}{"default": {}}
+			}
+			if _, ok := allowed[sinkLabel]; !ok {
+				issues = append(issues, ValidationIssue{Code: "SINK_INVALID_LABEL", Message: fmt.Sprintf("switch sink label %q is not declared", sinkLabel), Path: fmt.Sprintf("$.sinks[%d].node_id", i)})
+			}
+		default:
+			issues = append(issues, ValidationIssue{Code: "SINK_INVALID_LABEL", Message: "sink label is only allowed for Conditional or Switch nodes", Path: fmt.Sprintf("$.sinks[%d].node_id", i)})
 		}
 	}
 
@@ -367,4 +719,46 @@ func decodeStrict(data []byte, out any) error {
 		return fmt.Errorf("unexpected trailing content")
 	}
 	return nil
+}
+
+func parseSinkNodeRef(v string) (string, string, error) {
+	parts := strings.Split(strings.TrimSpace(v), ":")
+	if len(parts) == 0 || strings.TrimSpace(parts[0]) == "" {
+		return "", "", fmt.Errorf("sink node_id is required")
+	}
+	if len(parts) > 2 {
+		return "", "", fmt.Errorf("sink node_id must be node_id or node_id:label")
+	}
+	nodeID := strings.TrimSpace(parts[0])
+	if len(parts) == 1 {
+		return nodeID, "", nil
+	}
+	label := strings.ToLower(strings.TrimSpace(parts[1]))
+	if label == "" {
+		return "", "", fmt.Errorf("sink label is required when using node_id:label")
+	}
+	return nodeID, label, nil
+}
+
+func buildSwitchLabelsByNode(spec *Spec) map[string]map[string]struct{} {
+	labelsByNode := make(map[string]map[string]struct{})
+	for _, node := range spec.Nodes {
+		if node.Type != NodeTypeSwitch {
+			continue
+		}
+		labels := map[string]struct{}{"default": {}}
+		var cfg SwitchConfig
+		if err := decodeStrict(node.Config, &cfg); err != nil {
+			labelsByNode[node.ID] = labels
+			continue
+		}
+		for _, b := range cfg.Branches {
+			k := strings.ToLower(strings.TrimSpace(b.Label))
+			if k != "" {
+				labels[k] = struct{}{}
+			}
+		}
+		labelsByNode[node.ID] = labels
+	}
+	return labelsByNode
 }

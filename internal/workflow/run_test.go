@@ -78,7 +78,7 @@ func TestRun_UnsupportedNodeReturnsStructuredError(t *testing.T) {
 	}`)
 
 	spec, err := pipeline.ParseAndValidateJSON(payload)
-	require.Error(t, err)
+	require.NoError(t, err)
 
 	// force a structurally valid spec that contains unsupported node type
 	spec = &pipeline.Spec{

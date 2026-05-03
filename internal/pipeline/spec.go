@@ -79,3 +79,107 @@ type JoinInputs struct {
 	Left  string `json:"left"`
 	Right string `json:"right"`
 }
+
+type SelectColumnsConfig struct {
+	Columns []string `json:"columns"`
+}
+
+type SortConfig struct {
+	Keys []SortKeyConfig `json:"keys"`
+}
+
+type SortKeyConfig struct {
+	Column    string `json:"column"`
+	Direction string `json:"direction,omitempty"`
+	Nulls     string `json:"nulls,omitempty"`
+}
+
+type LimitConfig struct {
+	Count  int  `json:"count"`
+	Offset *int `json:"offset,omitempty"`
+}
+
+type ConstantColumnConfig struct {
+	Column ColumnSpec `json:"column"`
+	Value  any        `json:"value"`
+}
+
+type ComputeColumnsConfig struct {
+	Columns []ComputeColumnSpec `json:"columns"`
+}
+
+type ComputeColumnSpec struct {
+	Name    string `json:"name"`
+	SQLType string `json:"sql_type"`
+	Expr    string `json:"expr"`
+}
+
+type RenameColumnsConfig struct {
+	Renames []RenameColumnSpec `json:"renames"`
+}
+
+type RenameColumnSpec struct {
+	From string `json:"from"`
+	To   string `json:"to"`
+}
+
+type CastColumnsConfig struct {
+	Casts []CastColumnSpec `json:"casts"`
+}
+
+type CastColumnSpec struct {
+	Column  string `json:"column"`
+	SQLType string `json:"sql_type"`
+}
+
+type FillReplaceConfig struct {
+	Rules []FillReplaceRuleSpec `json:"rules"`
+}
+
+type FillReplaceRuleSpec struct {
+	Column       string `json:"column"`
+	FillNullWith any    `json:"fill_null_with,omitempty"`
+	ReplaceFrom  any    `json:"replace_from,omitempty"`
+	ReplaceTo    any    `json:"replace_to,omitempty"`
+}
+
+type DeduplicateConfig struct {
+	Columns []string        `json:"columns"`
+	Keep    string          `json:"keep,omitempty"`
+	OrderBy []SortKeyConfig `json:"order_by"`
+}
+
+type ConditionalConfig struct {
+	Mode  string       `json:"mode,omitempty"`
+	Rules []FilterRule `json:"rules"`
+}
+
+type SwitchConfig struct {
+	Branches []SwitchBranchConfig `json:"branches"`
+}
+
+type SwitchBranchConfig struct {
+	Label string       `json:"label"`
+	Mode  string       `json:"mode,omitempty"`
+	Rules []FilterRule `json:"rules"`
+}
+
+type UnnestArrayConfig struct {
+	ArrayColumn  string     `json:"array_column"`
+	OutputColumn ColumnSpec `json:"output_column"`
+}
+
+type PivotConfig struct {
+	GroupBy     []string `json:"group_by"`
+	PivotColumn string   `json:"pivot_column"`
+	ValueColumn string   `json:"value_column"`
+	AggFn       string   `json:"agg_fn,omitempty"`
+	InValues    []string `json:"in_values"`
+}
+
+type UnpivotConfig struct {
+	Passthrough []string   `json:"passthrough"`
+	NameColumn  ColumnSpec `json:"name_column"`
+	ValueColumn ColumnSpec `json:"value_column"`
+	InColumns   []string   `json:"in_columns"`
+}
