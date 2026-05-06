@@ -39,6 +39,7 @@ func TestRun_DataSourceFilter_AllAndAny(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, resultsAll, 1)
 	require.Equal(t, 1, resultsAll[0].RowCount)
+	require.Equal(t, 1, mustCountRows(t, db, "out_all"))
 
 	payloadAny := []byte(`{
 		"pipeline_id": "wf_any",
@@ -60,6 +61,34 @@ func TestRun_DataSourceFilter_AllAndAny(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, resultsAny, 1)
 	require.Equal(t, 2, resultsAny[0].RowCount)
+	require.Equal(t, 2, mustCountRows(t, db, "out_any"))
+}
+
+func TestRun_DuplicateSinkTargetsReturnStructuredErrorBeforeExecution(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+
+	csvPath := writeCSV(t, "people.csv", "id,name,age,country\n1,Ana,20,BR\n")
+	spec := &pipeline.Spec{
+		PipelineID: "wf_duplicate_sink",
+		Version:    1,
+		Nodes: []pipeline.Node{
+			{ID: "src", Type: "DataSource", Config: []byte(`{"format":"csv","path":"` + csvPath + `","mode":"infer"}`)},
+		},
+		Sinks: []pipeline.Sink{
+			{NodeID: "src", TargetTable: " Out "},
+			{NodeID: "src", TargetTable: "out"},
+		},
+	}
+
+	_, err := Run(db, spec)
+	require.Error(t, err)
+
+	var wfErr *WorkflowError
+	require.True(t, errors.As(err, &wfErr))
+	require.Equal(t, ErrorCodeDuplicateSinkTarget, wfErr.Code)
+	require.Equal(t, "validate_sinks", wfErr.Stage)
+	require.False(t, tableExists(t, db, "wf_wf_duplicate_sink_src"))
 }
 
 func TestRun_UnsupportedNodeReturnsStructuredError(t *testing.T) {
@@ -197,6 +226,37 @@ func TestRun_JoinMergeConditionalSwitch(t *testing.T) {
 	require.Equal(t, 1, counts["cond:else"])
 	require.Equal(t, 2, counts["sw:VIP"])
 	require.Equal(t, 1, counts["sw:default"])
+	require.Equal(t, 6, mustCountRows(t, db, "merge_out"))
+	require.Equal(t, 2, mustCountRows(t, db, "cond_if"))
+	require.Equal(t, 1, mustCountRows(t, db, "cond_else"))
+	require.Equal(t, 2, mustCountRows(t, db, "sw_vip"))
+	require.Equal(t, 1, mustCountRows(t, db, "sw_default"))
+}
+
+func TestRun_ExistingSinkTargetReturnsStructuredError(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+
+	csvPath := writeCSV(t, "people.csv", "id,name,age,country\n1,Ana,20,BR\n")
+	require.NoError(t, execSQL(db, "CREATE TABLE out_existing (id BIGINT)"))
+	payload := []byte(`{
+		"pipeline_id": "wf_existing_sink",
+		"version": 1,
+		"nodes": [
+			{"id": "src", "type": "DataSource", "config": {"format": "csv", "path": "` + csvPath + `", "mode": "infer"}}
+		],
+		"sinks": [{"node_id": "src", "target_table": "out_existing"}]
+	}`)
+
+	spec, err := pipeline.ParseAndValidateJSON(payload)
+	require.NoError(t, err)
+	_, err = Run(db, spec)
+	require.Error(t, err)
+
+	var wfErr *WorkflowError
+	require.True(t, errors.As(err, &wfErr))
+	require.Equal(t, ErrorCodeSinkMaterialize, wfErr.Code)
+	require.Equal(t, "materialize_sink", wfErr.Stage)
 }
 
 func TestRun_SortLimit_And_MutationChain(t *testing.T) {
@@ -327,4 +387,23 @@ func writeCSV(t *testing.T, name string, body string) string {
 	path := filepath.Join(dir, name)
 	require.NoError(t, os.WriteFile(path, []byte(body), 0o644))
 	return path
+}
+
+func mustCountRows(t *testing.T, db *sql.DB, table string) int {
+	t.Helper()
+	var count int
+	require.NoError(t, db.QueryRow("SELECT COUNT(*) FROM "+table).Scan(&count))
+	return count
+}
+
+func tableExists(t *testing.T, db *sql.DB, table string) bool {
+	t.Helper()
+	var exists bool
+	require.NoError(t, db.QueryRow("SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = ?)", table).Scan(&exists))
+	return exists
+}
+
+func execSQL(db *sql.DB, query string) error {
+	_, err := db.Exec(query)
+	return err
 }

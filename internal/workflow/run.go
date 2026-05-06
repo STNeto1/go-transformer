@@ -26,7 +26,9 @@ const (
 	ErrorCodeDerive               ErrorCode = "DERIVE_FAILED"
 	ErrorCodeMaterialize          ErrorCode = "MATERIALIZE_FAILED"
 	ErrorCodeSinkResolution       ErrorCode = "SINK_RESOLUTION_FAILED"
+	ErrorCodeSinkMaterialize      ErrorCode = "SINK_MATERIALIZE_FAILED"
 	ErrorCodeSinkCount            ErrorCode = "SINK_COUNT_FAILED"
+	ErrorCodeDuplicateSinkTarget  ErrorCode = "DUPLICATE_SINK_TARGET"
 	ErrorCodeTableNameCollision   ErrorCode = "TABLE_NAME_COLLISION"
 	ErrorCodeGraphOrder           ErrorCode = "GRAPH_ORDER_FAILED"
 	ErrorCodeDependencyShape      ErrorCode = "DEPENDENCY_SHAPE_FAILED"
@@ -82,6 +84,9 @@ func Run(db *sql.DB, spec *pipeline.Spec) ([]SinkResult, error) {
 	if spec == nil {
 		return nil, &WorkflowError{Code: ErrorCodeInvalidArgument, Stage: "run", Message: "spec is required"}
 	}
+	if err := validateSinkTargets(spec.Sinks); err != nil {
+		return nil, err
+	}
 
 	ordered, depsByNode, err := topologicalOrder(spec)
 	if err != nil {
@@ -104,9 +109,12 @@ func Run(db *sql.DB, spec *pipeline.Spec) ([]SinkResult, error) {
 		if !ok {
 			return nil, &WorkflowError{Code: ErrorCodeSinkResolution, Stage: "resolve_sink", Message: fmt.Sprintf("sink node reference %q was not materialized", sink.NodeID)}
 		}
-		count, err := countRows(db, table.Name)
+		if err := materializeSink(db, table, sink.TargetTable); err != nil {
+			return nil, &WorkflowError{Code: ErrorCodeSinkMaterialize, Stage: "materialize_sink", Message: fmt.Sprintf("failed to materialize sink %q into target table %q", sink.NodeID, sink.TargetTable), Cause: err}
+		}
+		count, err := countRows(db, sink.TargetTable)
 		if err != nil {
-			return nil, &WorkflowError{Code: ErrorCodeSinkCount, Stage: "sink_count", Message: fmt.Sprintf("failed counting sink rows for %q", sink.NodeID), Cause: err}
+			return nil, &WorkflowError{Code: ErrorCodeSinkCount, Stage: "sink_count", Message: fmt.Sprintf("failed counting sink target rows for %q", sink.NodeID), Cause: err}
 		}
 		results = append(results, SinkResult{NodeID: sink.NodeID, TargetTable: sink.TargetTable, SourceTable: table.Name, RowCount: count})
 	}
@@ -857,6 +865,41 @@ func materialize(db *sql.DB, table sqlspec.TableSpec, stmt *ast.InsertStatement)
 		return err
 	}
 	if _, err := db.Exec(formatter.FormatStatement(stmt, ast.CompactStyle())); err != nil {
+		return err
+	}
+	return nil
+}
+
+func validateSinkTargets(sinks []pipeline.Sink) error {
+	seen := make(map[string]string, len(sinks))
+	for _, sink := range sinks {
+		target := strings.TrimSpace(sink.TargetTable)
+		if target == "" {
+			continue
+		}
+		key := strings.ToLower(target)
+		if prior, ok := seen[key]; ok {
+			return &WorkflowError{Code: ErrorCodeDuplicateSinkTarget, Stage: "validate_sinks", Message: fmt.Sprintf("multiple sinks target table %q", prior)}
+		}
+		seen[key] = target
+	}
+	return nil
+}
+
+func materializeSink(db *sql.DB, source sqlspec.TableSpec, targetTable string) error {
+	target := sqlspec.TableSpec{Name: strings.TrimSpace(targetTable), Columns: source.Columns}
+	createStmt, err := sqlspec.BuildCreateTable(target)
+	if err != nil {
+		return err
+	}
+	if _, err := db.Exec(formatter.FormatStatement(createStmt, ast.CompactStyle())); err != nil {
+		return err
+	}
+	backfill, err := sqlspec.BuildBackfillInsert(source.Name, sqlspec.ResolvedBranch{Table: target})
+	if err != nil {
+		return err
+	}
+	if _, err := db.Exec(formatter.FormatStatement(backfill, ast.CompactStyle())); err != nil {
 		return err
 	}
 	return nil
