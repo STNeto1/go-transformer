@@ -91,6 +91,22 @@ func TestRun_DuplicateSinkTargetsReturnStructuredErrorBeforeExecution(t *testing
 	require.False(t, tableExists(t, db, "wf_wf_duplicate_sink_src"))
 }
 
+func TestOutputRefHelpers(t *testing.T) {
+	require.Equal(t, "node", normalizeOutputRef("Node"))
+	require.Equal(t, "node:if", normalizeOutputRef("Node:IF"))
+	require.Equal(t, "node:vip", makeOutputRef(" Node ", " Vip "))
+
+	base, label, err := splitOutputRef(" node : Else ")
+	require.NoError(t, err)
+	require.Equal(t, "node", base)
+	require.Equal(t, "Else", label)
+
+	_, _, err = splitOutputRef("node:")
+	require.Error(t, err)
+	_, _, err = splitOutputRef("a:b:c")
+	require.Error(t, err)
+}
+
 func TestRun_UnsupportedNodeReturnsStructuredError(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
@@ -233,6 +249,75 @@ func TestRun_JoinMergeConditionalSwitch(t *testing.T) {
 	require.Equal(t, 1, mustCountRows(t, db, "sw_default"))
 }
 
+func TestRun_DiamondDAG(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+
+	csvPath := writeCSV(t, "people.csv", "id,name,age,country\n1,Ana,20,BR\n2,Bob,45,US\n3,Carla,55,BR\n4,Dan,38,US\n")
+	payload := []byte(`{
+		"pipeline_id":"wf_diamond",
+		"version":1,
+		"nodes":[
+			{"id":"src","type":"DataSource","config":{"format":"csv","path":"` + csvPath + `","mode":"infer"}},
+			{"id":"left","type":"Filter","inputs":["src"],"config":{"rules":[{"column":"country","operation":"eq","value":"BR"}]}},
+			{"id":"right","type":"Filter","inputs":["src"],"config":{"rules":[{"column":"age","operation":"gt","value":30}]}},
+			{"id":"merged","type":"MergeUnion","inputs":["left","right"],"config":{"mode":"strict_positional"}}
+		],
+		"sinks":[{"node_id":"merged","target_table":"diamond_out"}]
+	}`)
+
+	spec, err := pipeline.ParseAndValidateJSON(payload)
+	require.NoError(t, err)
+	results, err := Run(db, spec)
+	require.NoError(t, err)
+	require.Len(t, results, 1)
+	require.Equal(t, "merged", results[0].NodeID)
+	require.Equal(t, "diamond_out", results[0].TargetTable)
+	require.Equal(t, 5, results[0].RowCount)
+	require.Equal(t, 5, mustCountRows(t, db, "diamond_out"))
+}
+
+func TestRun_BranchingSinkRefs(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+
+	csvPath := writeCSV(t, "people.csv", "id,name,age,segment\n1,Ana,20,retail\n2,Bob,45,vip\n3,Carla,55,vip\n4,Dan,38,retail\n")
+	payload := []byte(`{
+		"pipeline_id":"wf_branch_sinks",
+		"version":1,
+		"nodes":[
+			{"id":"src","type":"DataSource","config":{"format":"csv","path":"` + csvPath + `","mode":"infer"}},
+			{"id":"cond","type":"Conditional","inputs":["src"],"config":{"rules":[{"column":"age","operation":"gt","value":40}]}},
+			{"id":"sw","type":"Switch","inputs":["src"],"config":{"branches":[{"label":"vip","rules":[{"column":"segment","operation":"eq","value":"vip"}]}]}}
+		],
+		"sinks":[
+			{"node_id":"cond:IF","target_table":"branch_cond_if"},
+			{"node_id":"cond:else","target_table":"branch_cond_else"},
+			{"node_id":"sw:VIP","target_table":"branch_sw_vip"},
+			{"node_id":"sw:default","target_table":"branch_sw_default"}
+		]
+	}`)
+
+	spec, err := pipeline.ParseAndValidateJSON(payload)
+	require.NoError(t, err)
+	results, err := Run(db, spec)
+	require.NoError(t, err)
+	require.Len(t, results, 4)
+
+	counts := map[string]int{}
+	for _, r := range results {
+		counts[r.NodeID] = r.RowCount
+	}
+	require.Equal(t, 2, counts["cond:IF"])
+	require.Equal(t, 2, counts["cond:else"])
+	require.Equal(t, 2, counts["sw:VIP"])
+	require.Equal(t, 2, counts["sw:default"])
+	require.Equal(t, 2, mustCountRows(t, db, "branch_cond_if"))
+	require.Equal(t, 2, mustCountRows(t, db, "branch_cond_else"))
+	require.Equal(t, 2, mustCountRows(t, db, "branch_sw_vip"))
+	require.Equal(t, 2, mustCountRows(t, db, "branch_sw_default"))
+}
+
 func TestRun_ExistingSinkTargetReturnsStructuredError(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
@@ -257,6 +342,59 @@ func TestRun_ExistingSinkTargetReturnsStructuredError(t *testing.T) {
 	require.True(t, errors.As(err, &wfErr))
 	require.Equal(t, ErrorCodeSinkMaterialize, wfErr.Code)
 	require.Equal(t, "materialize_sink", wfErr.Stage)
+}
+
+func TestRun_InvalidRuntimeConfigsReturnStructuredErrors(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+
+	csvPath := writeCSV(t, "people.csv", "id,name,age,country\n1,Ana,20,BR\n")
+	tests := []struct {
+		name     string
+		spec     *pipeline.Spec
+		code     ErrorCode
+		stage    string
+		nodeID   string
+		nodeType string
+	}{
+		{
+			name: "bad config json",
+			spec: &pipeline.Spec{PipelineID: "wf_bad_json", Version: 1, Nodes: []pipeline.Node{
+				{ID: "src", Type: "DataSource", Config: []byte(`{"format":"csv","path":"` + csvPath + `","mode":"infer"}`)},
+				{ID: "f", Type: "Filter", Inputs: []byte(`["src"]`), Config: []byte(`{"rules":`)},
+			}, Sinks: []pipeline.Sink{{NodeID: "f", TargetTable: "bad_json_out"}}},
+			code: ErrorCodeConfigDecode, stage: "decode_config", nodeID: "f", nodeType: "Filter",
+		},
+		{
+			name: "derive error",
+			spec: &pipeline.Spec{PipelineID: "wf_derive", Version: 1, Nodes: []pipeline.Node{
+				{ID: "src", Type: "DataSource", Config: []byte(`{"format":"csv","path":"` + csvPath + `","mode":"infer"}`)},
+				{ID: "sel", Type: "SelectColumns", Inputs: []byte(`["src"]`), Config: []byte(`{"columns":["missing"]}`)},
+			}, Sinks: []pipeline.Sink{{NodeID: "sel", TargetTable: "derive_out"}}},
+			code: ErrorCodeDerive, stage: "derive", nodeID: "sel", nodeType: "SelectColumns",
+		},
+		{
+			name: "dependency shape",
+			spec: &pipeline.Spec{PipelineID: "wf_dep_shape", Version: 1, Nodes: []pipeline.Node{
+				{ID: "src", Type: "DataSource", Config: []byte(`{"format":"csv","path":"` + csvPath + `","mode":"infer"}`)},
+				{ID: "f", Type: "Filter", Inputs: []byte(`["src","src"]`), Config: []byte(`{"rules":[{"column":"age","operation":"gt","value":10}]}`)},
+			}, Sinks: []pipeline.Sink{{NodeID: "f", TargetTable: "dep_shape_out"}}},
+			code: ErrorCodeDependencyShape, stage: "dispatch", nodeID: "f", nodeType: "Filter",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := Run(db, tt.spec)
+			require.Error(t, err)
+			var wfErr *WorkflowError
+			require.True(t, errors.As(err, &wfErr))
+			require.Equal(t, tt.code, wfErr.Code)
+			require.Equal(t, tt.stage, wfErr.Stage)
+			require.Equal(t, tt.nodeID, wfErr.NodeID)
+			require.Equal(t, tt.nodeType, wfErr.NodeType)
+		})
+	}
 }
 
 func TestRun_SortLimit_And_MutationChain(t *testing.T) {

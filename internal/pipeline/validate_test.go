@@ -1,6 +1,7 @@
 package pipeline
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -71,6 +72,38 @@ func TestParseAndValidateJSON_ValidMultiSourceDAG(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "sales_customer_rollup_v1", spec.PipelineID)
 	require.Len(t, spec.Nodes, 5)
+}
+
+func TestParseSinkNodeRef(t *testing.T) {
+	tests := []struct {
+		name      string
+		ref       string
+		nodeID    string
+		label     string
+		wantError bool
+	}{
+		{name: "standard node", ref: "node", nodeID: "node"},
+		{name: "branch label", ref: "node:if", nodeID: "node", label: "if"},
+		{name: "case insensitive label", ref: "node:IF", nodeID: "node", label: "if"},
+		{name: "trim spaces", ref: " node : Vip ", nodeID: "node", label: "vip"},
+		{name: "empty", ref: "", wantError: true},
+		{name: "missing node", ref: ":if", wantError: true},
+		{name: "missing label", ref: "node:", wantError: true},
+		{name: "too many parts", ref: "a:b:c", wantError: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			nodeID, label, err := parseSinkNodeRef(tt.ref)
+			if tt.wantError {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tt.nodeID, nodeID)
+			require.Equal(t, tt.label, label)
+		})
+	}
 }
 
 func TestParseAndValidateJSON_InvalidJSON(t *testing.T) {
@@ -200,4 +233,46 @@ func TestParseAndValidateJSON_InvalidSwitchLabel(t *testing.T) {
 	_, err := ParseAndValidateJSON(payload)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "SINK_INVALID_LABEL")
+}
+
+func TestParseAndValidateJSON_SinkLabelValidationIssues(t *testing.T) {
+	tests := []struct {
+		name string
+		json string
+		code string
+	}{
+		{
+			name: "conditional rejects unknown label",
+			code: "SINK_INVALID_LABEL",
+			json: `{"pipeline_id":"p","version":1,"nodes":[{"id":"src","type":"DataSource","config":{"format":"csv","path":"data/a.csv","mode":"infer"}},{"id":"cond","type":"Conditional","inputs":["src"],"config":{"rules":[{"column":"x","operation":"eq","value":1}]}}],"sinks":[{"node_id":"cond:maybe","target_table":"out"}]}`,
+		},
+		{
+			name: "switch rejects default branch label",
+			code: "SCHEMA_INVALID",
+			json: `{"pipeline_id":"p","version":1,"nodes":[{"id":"src","type":"DataSource","config":{"format":"csv","path":"data/a.csv","mode":"infer"}},{"id":"sw","type":"Switch","inputs":["src"],"config":{"branches":[{"label":"default","rules":[{"column":"x","operation":"eq","value":1}]}]}}],"sinks":[{"node_id":"sw:default","target_table":"out"}]}`,
+		},
+		{
+			name: "switch rejects duplicate labels case insensitive",
+			code: "SCHEMA_INVALID",
+			json: `{"pipeline_id":"p","version":1,"nodes":[{"id":"src","type":"DataSource","config":{"format":"csv","path":"data/a.csv","mode":"infer"}},{"id":"sw","type":"Switch","inputs":["src"],"config":{"branches":[{"label":"vip","rules":[{"column":"x","operation":"eq","value":1}]},{"label":"VIP","rules":[{"column":"x","operation":"eq","value":2}]}]}}],"sinks":[{"node_id":"sw:vip","target_table":"out"}]}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := ParseAndValidateJSON([]byte(tt.json))
+			require.Error(t, err)
+			var validationErr *ValidationError
+			require.True(t, errors.As(err, &validationErr))
+			require.Contains(t, issueCodes(validationErr), tt.code)
+		})
+	}
+}
+
+func issueCodes(err *ValidationError) []string {
+	codes := make([]string, 0, len(err.Issues))
+	for _, issue := range err.Issues {
+		codes = append(codes, issue.Code)
+	}
+	return codes
 }
