@@ -32,9 +32,9 @@ const (
 )
 
 type ValidationIssue struct {
-	Code    string
-	Message string
-	Path    string
+	Code    string `json:"code"`
+	Message string `json:"message"`
+	Path    string `json:"path"`
 }
 
 type ValidationError struct {

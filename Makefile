@@ -4,8 +4,9 @@ PREVIEW ?= 5
 DATA_DIR ?= data
 TELEMETRY_FORMAT ?= text
 TELEMETRY_LEVEL ?= basic
+ADDR ?= :8888
 
-.PHONY: help gen-data run-workloads run-transformations validate-pipeline run-pipeline demo demo-transformations test
+.PHONY: help gen-data run-workloads run-transformations validate-pipeline run-pipeline run-http-server demo demo-transformations test
 
 help:
 	@printf "Targets:\n"
@@ -14,6 +15,7 @@ help:
 	@printf "  make run-transformations Run transformation examples\n"
 	@printf "  make validate-pipeline Validate pipeline JSON spec\n"
 	@printf "  make run-pipeline   Execute a pipeline JSON workflow\n"
+	@printf "  make run-http-server Run HTTP validation server\n"
 	@printf "  make demo           Generate data, then run workloads\n"
 	@printf "  make demo-transformations Generate data, then run transformations\n"
 	@printf "  make test           Run Go test suite\n"
@@ -31,6 +33,7 @@ help:
 	@printf "  DATA_DIR=%s\n" "$(DATA_DIR)"
 	@printf "  TELEMETRY_FORMAT=%s\n" "$(TELEMETRY_FORMAT)"
 	@printf "  TELEMETRY_LEVEL=%s\n" "$(TELEMETRY_LEVEL)"
+	@printf "  ADDR=%s\n" "$(ADDR)"
 
 gen-data:
 	go run ./cmd/gen-data --rows $(ROWS) --seed $(SEED) --out-dir $(DATA_DIR)
@@ -48,6 +51,9 @@ validate-pipeline:
 run-pipeline:
 	@if [ -z "$(FILE)" ]; then echo "Usage: make run-pipeline FILE=path/to/pipeline.json"; exit 1; fi
 	go run ./cmd/run-pipeline --file $(FILE)
+
+run-http-server:
+	go run ./cmd/http-server --addr $(ADDR)
 
 demo: gen-data run-workloads
 
