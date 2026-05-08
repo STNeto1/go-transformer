@@ -1,0 +1,37 @@
+sql:
+  dialect: psql
+  pattern: "schema/*.sql"
+  schemas:
+    - public
+
+plugins_preset: "all"
+type_system: "database/sql"
+tags:
+  - json
+
+plugins:
+  dbinfo:
+    destination: "internal/db/dbinfo"
+    pkgname: "dbinfo"
+  enums:
+    destination: "internal/db/enums"
+    pkgname: "enums"
+  models:
+    destination: "internal/db/models"
+    pkgname: "models"
+  factory:
+    destination: "internal/db/factory"
+    pkgname: "factory"
+  dberrors:
+    destination: "internal/db/dberrors"
+    pkgname: "dberrors"
+  where:
+    disabled: false
+  loaders:
+    disabled: false
+  joins:
+    disabled: false
+  counts:
+    disabled: false
+  queries:
+    disabled: false

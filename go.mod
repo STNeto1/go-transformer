@@ -3,10 +3,15 @@ module go-transformer
 go 1.26.2
 
 require (
+	github.com/aarondl/opt v0.0.0-20250607033636-982744e1bd65
 	github.com/ajitpratap0/GoSQLX v1.14.0
 	github.com/cloudwego/hertz v0.10.4
 	github.com/duckdb/duckdb-go/v2 v2.10502.0
 	github.com/go-swagno/swagno/v3 v3.3.0
+	github.com/jaswdr/faker/v2 v2.9.1
+	github.com/lib/pq v1.12.0
+	github.com/stephenafamo/bob v0.43.0
+	github.com/stephenafamo/scan v0.7.0
 	github.com/stretchr/testify v1.11.1
 )
 
@@ -34,6 +39,7 @@ require (
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/pierrec/lz4/v4 v4.1.25 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
+	github.com/qdm12/reprint v0.0.0-20200326205758-722754a53494 // indirect
 	github.com/tidwall/gjson v1.14.4 // indirect
 	github.com/tidwall/match v1.1.1 // indirect
 	github.com/tidwall/pretty v1.2.0 // indirect

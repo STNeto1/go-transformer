@@ -6,7 +6,7 @@ TELEMETRY_FORMAT ?= text
 TELEMETRY_LEVEL ?= basic
 ADDR ?= :8888
 
-.PHONY: help gen-data run-workloads run-transformations validate-pipeline run-pipeline run-http-server demo demo-transformations test
+.PHONY: help gen-data run-workloads run-transformations validate-pipeline run-pipeline run-http-server atlas-plan atlas-apply bobgen db-sync demo demo-transformations test
 
 help:
 	@printf "Targets:\n"
@@ -16,6 +16,10 @@ help:
 	@printf "  make validate-pipeline Validate pipeline JSON spec\n"
 	@printf "  make run-pipeline   Execute a pipeline JSON workflow\n"
 	@printf "  make run-http-server Run HTTP validation server\n"
+	@printf "  make atlas-plan     Preview Atlas schema sync\n"
+	@printf "  make atlas-apply    Apply Atlas schema sync\n"
+	@printf "  make bobgen         Generate Bob Postgres models\n"
+	@printf "  make db-sync        Apply schema sync, then generate Bob models\n"
 	@printf "  make demo           Generate data, then run workloads\n"
 	@printf "  make demo-transformations Generate data, then run transformations\n"
 	@printf "  make test           Run Go test suite\n"
@@ -54,6 +58,17 @@ run-pipeline:
 
 run-http-server:
 	go run ./cmd/http-server --addr $(ADDR)
+
+atlas-plan:
+	atlas schema apply --env local --dry-run
+
+atlas-apply:
+	atlas schema apply --env local
+
+bobgen:
+	go run github.com/stephenafamo/bob/gen/bobgen-sql@latest -c ./bobgen.yaml
+
+db-sync: atlas-apply bobgen
 
 demo: gen-data run-workloads
 
