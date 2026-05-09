@@ -4,6 +4,11 @@ sql:
   schemas:
     - public
 
+psql:
+  dsn: "postgres://postgres:postgres@localhost:5432/transformer?sslmode=disable"
+  schemas:
+    - public
+
 plugins_preset: "all"
 type_system: "database/sql"
 tags:
