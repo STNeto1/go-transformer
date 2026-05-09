@@ -128,6 +128,58 @@ func TestParseAndValidateJSON_DetectsUnknownDependency(t *testing.T) {
 	require.Contains(t, err.Error(), "NODE_MISSING_DEPENDENCY")
 }
 
+func TestParseAndValidateJSON_ValidS3FileSinkTarget(t *testing.T) {
+	payload := []byte(`{
+		"pipeline_id": "p1",
+		"version": 1,
+		"nodes": [
+			{"id": "src", "type": "DataSource", "config": {"format": "csv", "path": "s3://inputs/a.csv", "mode": "infer", "options": {"header": true}}}
+		],
+		"sinks": [{"node_id": "src", "target_table": "out", "target": {"type": "file", "format": "parquet", "path": "s3://sinks/out.parquet", "mode": "overwrite"}}]
+	}`)
+
+	spec, err := ParseAndValidateJSON(payload)
+	require.NoError(t, err)
+	require.Equal(t, "s3://sinks/out.parquet", spec.Sinks[0].Target.Path)
+}
+
+func TestParseAndValidateJSON_InvalidSinkTarget(t *testing.T) {
+	tests := []struct {
+		name string
+		json string
+		want string
+	}{
+		{
+			name: "missing target table still invalid",
+			json: `{"pipeline_id":"p","version":1,"nodes":[{"id":"src","type":"DataSource","config":{"format":"csv","path":"s3://inputs/a.csv","mode":"infer"}}],"sinks":[{"node_id":"src","target":{"type":"file","format":"csv","path":"s3://sinks/out.csv"}}]}`,
+			want: "sink target_table is required",
+		},
+		{
+			name: "invalid target format",
+			json: `{"pipeline_id":"p","version":1,"nodes":[{"id":"src","type":"DataSource","config":{"format":"csv","path":"s3://inputs/a.csv","mode":"infer"}}],"sinks":[{"node_id":"src","target_table":"out","target":{"type":"file","format":"json","path":"s3://sinks/out.json"}}]}`,
+			want: "sink target format must be csv or parquet",
+		},
+		{
+			name: "duplicate target path",
+			json: `{"pipeline_id":"p","version":1,"nodes":[{"id":"src","type":"DataSource","config":{"format":"csv","path":"s3://inputs/a.csv","mode":"infer"}}],"sinks":[{"node_id":"src","target_table":"out1","target":{"type":"file","format":"csv","path":"s3://sinks/out.csv"}},{"node_id":"src","target_table":"out2","target":{"type":"file","format":"csv","path":"s3://sinks/out.csv"}}]}`,
+			want: "SINK_DUPLICATE_TARGET_PATH",
+		},
+		{
+			name: "parquet source header option invalid",
+			json: `{"pipeline_id":"p","version":1,"nodes":[{"id":"src","type":"DataSource","config":{"format":"parquet","path":"s3://inputs/a.parquet","mode":"infer","options":{"header":true}}}],"sinks":[{"node_id":"src","target_table":"out"}]}`,
+			want: "options.header is only supported for csv format",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := ParseAndValidateJSON([]byte(tt.json))
+			require.Error(t, err)
+			require.Contains(t, err.Error(), tt.want)
+		})
+	}
+}
+
 func TestParseAndValidateJSON_DetectsCycle(t *testing.T) {
 	payload := []byte(`{
 		"pipeline_id": "p1",

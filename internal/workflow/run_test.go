@@ -512,6 +512,32 @@ func TestRun_Reshape_UnnestPivotUnpivot(t *testing.T) {
 	require.Equal(t, 4, counts["unp"])
 }
 
+func TestWorkflowRun_ExportsFileSinkTarget(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+
+	csvPath := writeCSV(t, "people.csv", "id,name,age\n1,Ana,20\n2,Bob,45\n")
+	outPath := filepath.Join(t.TempDir(), "people_out.parquet")
+	payload := []byte(`{
+		"pipeline_id": "wf_file_sink",
+		"version": 1,
+		"nodes": [
+			{"id":"src","type":"DataSource","config":{"format":"csv","path":"` + csvPath + `","mode":"infer","options":{"header":true}}}
+		],
+		"sinks": [{"node_id":"src","target_table":"out_file_sink","target":{"type":"file","format":"parquet","path":"` + outPath + `","mode":"overwrite"}}]
+	}`)
+
+	spec, err := pipeline.ParseAndValidateJSON(payload)
+	require.NoError(t, err)
+	results, err := Run(db, spec)
+	require.NoError(t, err)
+	require.Len(t, results, 1)
+	require.Equal(t, outPath, results[0].TargetPath)
+	require.Equal(t, "parquet", results[0].Format)
+	require.Equal(t, 2, results[0].RowCount)
+	require.FileExists(t, outPath)
+}
+
 func openTestDB(t *testing.T) *sql.DB {
 	t.Helper()
 	db, err := sql.Open("duckdb", ":memory:")

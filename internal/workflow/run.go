@@ -73,6 +73,8 @@ var nonWord = regexp.MustCompile(`[^a-zA-Z0-9_]+`)
 type SinkResult struct {
 	NodeID      string
 	TargetTable string
+	TargetPath  string
+	Format      string
 	SourceTable string
 	RowCount    int
 }
@@ -116,7 +118,15 @@ func Run(db *sql.DB, spec *pipeline.Spec) ([]SinkResult, error) {
 		if err != nil {
 			return nil, &WorkflowError{Code: ErrorCodeSinkCount, Stage: "sink_count", Message: fmt.Sprintf("failed counting sink target rows for %q", sink.NodeID), Cause: err}
 		}
-		results = append(results, SinkResult{NodeID: sink.NodeID, TargetTable: sink.TargetTable, SourceTable: table.Name, RowCount: count})
+		result := SinkResult{NodeID: sink.NodeID, TargetTable: sink.TargetTable, SourceTable: table.Name, RowCount: count}
+		if sink.Target != nil {
+			if err := exportSinkTarget(db, sink.TargetTable, *sink.Target); err != nil {
+				return nil, &WorkflowError{Code: ErrorCodeSinkMaterialize, Stage: "export_sink", Message: fmt.Sprintf("failed to export sink %q to target path %q", sink.NodeID, sink.Target.Path), Cause: err}
+			}
+			result.TargetPath = sink.Target.Path
+			result.Format = sink.Target.Format
+		}
+		results = append(results, result)
 	}
 
 	return results, nil
@@ -250,7 +260,7 @@ func runDataSourceNode(db *sql.DB, node pipeline.Node, tableName string, state m
 	if err := decodeStrict(node.Config, &cfg); err != nil {
 		return wrapNodeErr(node, ErrorCodeConfigDecode, "decode_config", "failed to decode data source config", err)
 	}
-	resolved, stmt, err := sqlspec.DeriveDataSource(tableName, sqlspec.DataSourceSpec{Format: sqlspec.DataSourceFormat(cfg.Format), Path: cfg.Path, Mode: sqlspec.DataSourceMode(cfg.Mode), Columns: mapColumns(cfg.Columns)}, db)
+	resolved, stmt, err := sqlspec.DeriveDataSource(tableName, sqlspec.DataSourceSpec{Format: sqlspec.DataSourceFormat(cfg.Format), Path: cfg.Path, Mode: sqlspec.DataSourceMode(cfg.Mode), Columns: mapColumns(cfg.Columns), CSVHeader: cfg.Options.Header}, db)
 	if err != nil {
 		return wrapNodeErr(node, ErrorCodeDerive, "derive", "failed to derive data source SQL", err)
 	}
@@ -905,10 +915,37 @@ func materializeSink(db *sql.DB, source sqlspec.TableSpec, targetTable string) e
 	return nil
 }
 
+func exportSinkTarget(db *sql.DB, targetTable string, target pipeline.SinkTarget) error {
+	format := strings.ToLower(strings.TrimSpace(target.Format))
+	path := strings.TrimSpace(target.Path)
+	if path == "" {
+		return fmt.Errorf("sink target path is required")
+	}
+
+	options := ""
+	switch format {
+	case "csv":
+		options = "FORMAT CSV, HEADER TRUE"
+	case "parquet":
+		options = "FORMAT PARQUET"
+	default:
+		return fmt.Errorf("unsupported sink target format %q", target.Format)
+	}
+
+	stmt := "COPY " + strings.TrimSpace(targetTable) + " TO " + sqlStringLiteral(path) + " (" + options + ")"
+	_, err := db.Exec(stmt)
+	return err
+}
+
 func countRows(db *sql.DB, table string) (int, error) {
 	var count int
 	err := db.QueryRow("SELECT COUNT(*) FROM " + table).Scan(&count)
 	return count, err
+}
+
+func sqlStringLiteral(value string) string {
+	escaped := strings.ReplaceAll(value, "'", "''")
+	return "'" + escaped + "'"
 }
 
 func mapColumns(cols []pipeline.ColumnSpec) []sqlspec.ColumnSpec {

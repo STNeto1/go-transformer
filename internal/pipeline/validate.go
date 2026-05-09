@@ -139,6 +139,9 @@ func validateNode(node Node, idx int) ([]ValidationIssue, []string) {
 		if strings.TrimSpace(cfg.Format) == "" || !slices.Contains([]string{"csv", "parquet"}, cfg.Format) {
 			issues = append(issues, ValidationIssue{Code: "SCHEMA_INVALID", Message: "format must be csv or parquet", Path: path + ".config.format"})
 		}
+		if cfg.Format == "parquet" && cfg.Options.Header != nil {
+			issues = append(issues, ValidationIssue{Code: "SCHEMA_INVALID", Message: "options.header is only supported for csv format", Path: path + ".config.options.header"})
+		}
 		if strings.TrimSpace(cfg.Path) == "" {
 			issues = append(issues, ValidationIssue{Code: "SCHEMA_REQUIRED", Message: "path is required", Path: path + ".config.path"})
 		}
@@ -586,6 +589,7 @@ func validateGraphSoundness(spec *Spec, nodeByID map[string]int, depsByNode map[
 
 	switchLabels := buildSwitchLabelsByNode(spec)
 
+	seenTargetPaths := map[string]string{}
 	for i, sink := range spec.Sinks {
 		if strings.TrimSpace(sink.NodeID) == "" {
 			issues = append(issues, ValidationIssue{Code: "SCHEMA_REQUIRED", Message: "sink node_id is required", Path: fmt.Sprintf("$.sinks[%d].node_id", i)})
@@ -598,6 +602,28 @@ func validateGraphSoundness(spec *Spec, nodeByID map[string]int, depsByNode map[
 		}
 		if strings.TrimSpace(sink.TargetTable) == "" {
 			issues = append(issues, ValidationIssue{Code: "SCHEMA_REQUIRED", Message: "sink target_table is required", Path: fmt.Sprintf("$.sinks[%d].target_table", i)})
+		}
+		if sink.Target != nil {
+			targetPath := fmt.Sprintf("$.sinks[%d].target", i)
+			if strings.TrimSpace(sink.Target.Type) != "file" {
+				issues = append(issues, ValidationIssue{Code: "SCHEMA_INVALID", Message: "sink target type must be file", Path: targetPath + ".type"})
+			}
+			if strings.TrimSpace(sink.Target.Path) == "" {
+				issues = append(issues, ValidationIssue{Code: "SCHEMA_REQUIRED", Message: "sink target path is required", Path: targetPath + ".path"})
+			} else {
+				key := strings.ToLower(strings.TrimSpace(sink.Target.Path))
+				if prior, ok := seenTargetPaths[key]; ok {
+					issues = append(issues, ValidationIssue{Code: "SINK_DUPLICATE_TARGET_PATH", Message: fmt.Sprintf("multiple sinks target path %q", prior), Path: targetPath + ".path"})
+				} else {
+					seenTargetPaths[key] = sink.Target.Path
+				}
+			}
+			if !slices.Contains([]string{"csv", "parquet"}, strings.TrimSpace(sink.Target.Format)) {
+				issues = append(issues, ValidationIssue{Code: "SCHEMA_INVALID", Message: "sink target format must be csv or parquet", Path: targetPath + ".format"})
+			}
+			if sink.Target.Mode != "" && sink.Target.Mode != "overwrite" {
+				issues = append(issues, ValidationIssue{Code: "SCHEMA_INVALID", Message: "sink target mode must be overwrite", Path: targetPath + ".mode"})
+			}
 		}
 		nodeIdx, exists := nodeByID[sinkNodeID]
 		if !exists {

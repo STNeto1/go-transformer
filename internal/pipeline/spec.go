@@ -16,8 +16,16 @@ type Defaults struct {
 }
 
 type Sink struct {
-	NodeID      string `json:"node_id"`
-	TargetTable string `json:"target_table"`
+	NodeID      string      `json:"node_id"`
+	TargetTable string      `json:"target_table"`
+	Target      *SinkTarget `json:"target,omitempty"`
+}
+
+type SinkTarget struct {
+	Type   string `json:"type"`
+	Format string `json:"format"`
+	Path   string `json:"path"`
+	Mode   string `json:"mode,omitempty"`
 }
 
 type Node struct {
@@ -28,10 +36,15 @@ type Node struct {
 }
 
 type DataSourceConfig struct {
-	Format  string       `json:"format"`
-	Path    string       `json:"path"`
-	Mode    string       `json:"mode"`
-	Columns []ColumnSpec `json:"columns,omitempty"`
+	Format  string        `json:"format"`
+	Path    string        `json:"path"`
+	Mode    string        `json:"mode"`
+	Columns []ColumnSpec  `json:"columns,omitempty"`
+	Options SourceOptions `json:"options,omitempty"`
+}
+
+type SourceOptions struct {
+	Header *bool `json:"header,omitempty"`
 }
 
 type ColumnSpec struct {
