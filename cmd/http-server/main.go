@@ -9,6 +9,7 @@ import (
 	"go-transformer/internal/appdb"
 	"go-transformer/internal/httpapi"
 	"go-transformer/internal/inputfiles"
+	"go-transformer/internal/pipelines"
 	"go-transformer/internal/storage"
 )
 
@@ -31,7 +32,7 @@ func main() {
 
 	h := httpapi.NewServer(
 		httpapi.Config{Addr: *addr},
-		httpapi.Deps{InputFiles: inputfiles.NewService(db, storageClient)},
+		httpapi.Deps{InputFiles: inputfiles.NewService(db, storageClient), Pipelines: pipelines.NewService(db)},
 	)
 
 	log.Printf("serving HTTP on %s", *addr)

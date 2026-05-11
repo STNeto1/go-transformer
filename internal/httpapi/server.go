@@ -8,6 +8,7 @@ import (
 	"github.com/cloudwego/hertz/pkg/protocol/consts"
 
 	"go-transformer/internal/inputfiles"
+	"go-transformer/internal/pipelines"
 )
 
 type Config struct {
@@ -16,6 +17,7 @@ type Config struct {
 
 type Deps struct {
 	InputFiles *inputfiles.Service
+	Pipelines  *pipelines.Service
 }
 
 func NewServer(cfg Config, deps Deps) *server.Hertz {
@@ -23,7 +25,7 @@ func NewServer(cfg Config, deps Deps) *server.Hertz {
 	h.Use(Middlewares()...)
 
 	RegisterHealthRoutes(h)
-	RegisterPipelineRoutes(h)
+	RegisterPipelineRoutes(h, deps.Pipelines)
 	RegisterInputFileRoutes(h, deps.InputFiles)
 	RegisterOpenAPIRoute(h, cfg.Addr)
 

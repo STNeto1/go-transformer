@@ -3,6 +3,7 @@ package httpapi
 import (
 	"go-transformer/internal/inputfiles"
 	"go-transformer/internal/pipeline"
+	"go-transformer/internal/pipelines"
 )
 
 type HealthResponse struct {
@@ -46,6 +47,17 @@ type ValidatePipelineErrorResponse struct {
 	Valid  bool                       `json:"valid" example:"false"`
 	Error  string                     `json:"error" example:"pipeline validation failed"`
 	Issues []pipeline.ValidationIssue `json:"issues,omitempty"`
+}
+
+type PipelineResponse = pipelines.Pipeline
+type SavePipelineRequest = pipelines.SaveRequest
+
+type PipelineListResponse struct {
+	Pipelines []pipelines.Pipeline `json:"pipelines"`
+}
+
+type PipelineErrorResponse struct {
+	Error string `json:"error" example:"pipeline not found"`
 }
 
 type InputFileResponse = inputfiles.File

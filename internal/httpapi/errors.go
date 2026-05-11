@@ -9,6 +9,7 @@ import (
 	"github.com/cloudwego/hertz/pkg/protocol/consts"
 
 	"go-transformer/internal/inputfiles"
+	"go-transformer/internal/pipelines"
 )
 
 func parseID(c *app.RequestContext) (int64, bool) {
@@ -23,7 +24,7 @@ func parseID(c *app.RequestContext) (int64, bool) {
 func writeServiceResult(c *app.RequestContext, payload any, err error, successStatus int) {
 	if err != nil {
 		status := consts.StatusInternalServerError
-		if errors.Is(err, inputfiles.ErrNotFound) {
+		if errors.Is(err, inputfiles.ErrNotFound) || errors.Is(err, pipelines.ErrNotFound) {
 			status = consts.StatusNotFound
 		} else if strings.Contains(err.Error(), "required") || strings.Contains(err.Error(), "must be") || strings.Contains(err.Error(), "invalid") {
 			status = consts.StatusBadRequest
